@@ -1,6 +1,6 @@
 // @ts-check
 import { defineConfig } from "astro/config";
-import mdx from "@astrojs/mdx";
+import starlight from "@astrojs/starlight";
 
 // GitHub Pages: if repo is github.com/user/speedarr, set base to '/speedarr/'
 // For user.github.io/speedarr use base: '/speedarr/'. For custom domain use base: '/'
@@ -10,5 +10,30 @@ export default defineConfig({
   site: "https://your-username.github.io",
   base,
   output: "static",
-  integrations: [mdx()],
+  integrations: [
+    starlight({
+      title: "Speedarr documentation",
+      social: [
+        {
+          icon: "github",
+          label: "GitHub",
+          href: "https://github.com/Whats-A-MattR/speedarr",
+        },
+      ],
+      sidebar: [
+        {
+          label: "Overview",
+          items: ["index"],
+        },
+        {
+          label: "Guide",
+          items: ["deployment", "configuration", "development"],
+        },
+        {
+          label: "Reference",
+          items: ["api"],
+        },
+      ],
+    }),
+  ],
 });

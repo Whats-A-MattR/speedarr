@@ -1,6 +1,6 @@
 # Speedarr documentation site
 
-Static docs site built with [Astro](https://astro.build): prerendered, [MDX](https://mdxjs.com/) content via [content collections](https://docs.astro.build/en/guides/content-collections/), and client-side search.
+Static docs site built with [Astro](https://astro.build) + [Starlight](https://starlight.astro.build/): prerendered content collections with built-in navigation, dark mode, and full‑text search powered by Pagefind.
 
 ## Local development
 
@@ -39,4 +39,4 @@ The site is configured for **GitHub project pages**: repository `user/repo` → 
 
 ## Search
 
-Search is client-side: the build generates `search-index.json` (title, description, url per doc). The nav search box fetches that file and filters by typed words. No backend or third-party service required.
+Search is provided by **Starlight + Pagefind**. No extra configuration is needed: Starlight indexes the docs at build time and renders the search UI automatically.
