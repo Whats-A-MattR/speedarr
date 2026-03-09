@@ -3,7 +3,50 @@ title: Deployment
 description: Docker, environment variables, and volumes
 ---
 
-## Single container
+## Pre-built image (GHCR)
+
+Images are published to [GitHub Container Registry](https://github.com/Whats-A-MattR/speedarr/pkgs/container/speedarr):
+
+- **`ghcr.io/whats-a-mattr/speedarr:latest`** — latest build from `main`
+- **`ghcr.io/whats-a-mattr/speedarr:<version>`** — release (e.g. `0.1.0`)
+
+Use these with the [example compose files](#example-compose-files) below, or pull and run manually:
+
+```bash
+docker pull ghcr.io/whats-a-mattr/speedarr:latest
+docker run -d \
+  -p 3000:3000 \
+  -v speedarr-config:/config \
+  -e SPEEDARR_PASSWORD=your-dashboard-password \
+  ghcr.io/whats-a-mattr/speedarr:latest
+```
+
+## Example compose files
+
+The repo includes ready-to-use compose files in **[`examples/`](https://github.com/Whats-A-MattR/speedarr/tree/main/examples)**:
+
+| File | Use case |
+|------|----------|
+| **`examples/complete.yml`** | Dashboard only (single container, complete mode). |
+| **`examples/complete-with-nodes.yml`** | Dashboard plus three nodes on the same host. |
+| **`examples/node-only.yml`** | Node(s) only — no UI; register in a remote dashboard. |
+
+From the repo root:
+
+```bash
+# Dashboard only
+docker compose -f examples/complete.yml up -d
+
+# Dashboard + 3 nodes
+docker compose -f examples/complete-with-nodes.yml up -d
+
+# Node only (report to another dashboard)
+docker compose -f examples/node-only.yml up -d
+```
+
+See **[examples/README.md](https://github.com/Whats-A-MattR/speedarr/blob/main/examples/README.md)** for details.
+
+## Single container (build from source)
 
 ```bash
 docker build -t speedarr ./app
@@ -19,7 +62,13 @@ docker run -d \
 
 ## Main + nodes
 
-To run one dashboard and three nodes (e.g. for testing):
+To run one dashboard and three nodes (e.g. for testing), use the pre-built image and example file:
+
+```bash
+docker compose -f examples/complete-with-nodes.yml up -d
+```
+
+Or build from source (repo root):
 
 ```bash
 docker compose build

@@ -6,12 +6,22 @@ Internet speed monitoring dashboard and tooling. Runs speed tests on a schedule,
 
 ## Quick start
 
+**Pre-built image** (GitHub Container Registry):
+
 ```bash
-docker build -t speedarr ./app
-docker run -d -p 3000:3000 -v speedarr-config:/config -e SPEEDARR_PASSWORD=your-password speedarr
+docker pull ghcr.io/whats-a-mattr/speedarr:latest
+docker run -d -p 3000:3000 -v speedarr-config:/config -e SPEEDARR_PASSWORD=your-password ghcr.io/whats-a-mattr/speedarr:latest
 ```
 
-Open http://localhost:3000. For main + nodes, Gluetun, and options, run the docs site from `docs-site/` (see Deployment, Configuration, and more there) or use the published GitHub Pages site once deployed.
+Or use an example compose file from **`examples/`** (dashboard only, dashboard + nodes, or node-only):
+
+```bash
+docker compose -f examples/complete.yml up -d
+```
+
+**From source:** `docker build -t speedarr ./app` then run as above with `speedarr` as the image name.
+
+Open http://localhost:3000. For main + nodes, Gluetun, and options, see the [docs](docs-site/) (Deployment, Configuration) or the published GitHub Pages site.
 
 ## License
 

@@ -1,0 +1,26 @@
+# Speedarr: dashboard only (complete mode).
+# Uses pre-built image from GitHub Container Registry.
+#
+# Run: docker compose -f examples/complete.yml up -d
+# UI:  http://localhost:3000
+#
+# Image: ghcr.io/whats-a-mattr/speedarr (replace with your org/user for your own build)
+
+services:
+  speedarr:
+    image: ghcr.io/whats-a-mattr/speedarr:latest
+    container_name: speedarr
+    ports:
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      MODE: complete
+      PORT: 3000
+      SPEEDARR_DATA_DIR: /config
+      SPEEDARR_PASSWORD: change-me
+    volumes:
+      - speedarr-data:/config
+
+volumes:
+  speedarr-data:

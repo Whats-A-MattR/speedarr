@@ -1,0 +1,85 @@
+# Speedarr: one dashboard (complete) + three nodes.
+# Uses pre-built image from GitHub Container Registry.
+#
+# Run: docker compose -f examples/complete-with-nodes.yml up -d
+# UI:  http://localhost:3000
+#
+# Add nodes in the dashboard (Nodes → Add node):
+#   Node 1: Base URL http://speedarr-node1:3000  API key node1-secret  (ID: node1)
+#   Node 2: Base URL http://speedarr-node2:3000  API key node2-secret  (ID: node2)
+#   Node 3: Base URL http://speedarr-node3:3000  API key node3-secret  (ID: node3)
+#
+# Image: ghcr.io/whats-a-mattr/speedarr (replace with your org/user for your own build)
+
+services:
+  speedarr-main:
+    image: ghcr.io/whats-a-mattr/speedarr:latest
+    container_name: speedarr-main
+    ports:
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      MODE: complete
+      PORT: 3000
+      SPEEDARR_DATA_DIR: /config
+      SPEEDARR_PASSWORD: change-me
+    volumes:
+      - speedarr-main-data:/config
+    networks:
+      - speedarr
+
+  speedarr-node1:
+    image: ghcr.io/whats-a-mattr/speedarr:latest
+    container_name: speedarr-node1
+    environment:
+      MODE: node
+      PORT: 3000
+      SPEEDARR_DATA_DIR: /config
+      SPEEDARR_AGENT_ID: node1
+      SPEEDARR_AGENT_NAME: Node 1
+      SPEEDARR_API_KEY: node1-secret
+    volumes:
+      - speedarr-node1-data:/config
+    networks:
+      - speedarr
+
+  speedarr-node2:
+    image: ghcr.io/whats-a-mattr/speedarr:latest
+    container_name: speedarr-node2
+    environment:
+      MODE: node
+      PORT: 3000
+      SPEEDARR_DATA_DIR: /config
+      SPEEDARR_AGENT_ID: node2
+      SPEEDARR_AGENT_NAME: Node 2
+      SPEEDARR_API_KEY: node2-secret
+    volumes:
+      - speedarr-node2-data:/config
+    networks:
+      - speedarr
+
+  speedarr-node3:
+    image: ghcr.io/whats-a-mattr/speedarr:latest
+    container_name: speedarr-node3
+    environment:
+      MODE: node
+      PORT: 3000
+      SPEEDARR_DATA_DIR: /config
+      SPEEDARR_AGENT_ID: node3
+      SPEEDARR_AGENT_NAME: Node 3
+      SPEEDARR_API_KEY: node3-secret
+    volumes:
+      - speedarr-node3-data:/config
+    networks:
+      - speedarr
+
+networks:
+  speedarr:
+    driver: bridge
+
+volumes:
+  speedarr-main-data:
+  speedarr-node1-data:
+  speedarr-node2-data:
+  speedarr-node3-data:

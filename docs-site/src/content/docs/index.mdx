@@ -9,17 +9,21 @@ Speedarr is an internet speed monitoring dashboard and tooling. It runs speed te
 
 | Doc | Description |
 |-----|-------------|
-| [Deployment](/speedarr/deployment) | Docker (single container, main + nodes), environment variables, volumes |
+| [Deployment](/speedarr/deployment) | Docker (GHCR, example compose files, single container, main + nodes), env, volumes |
 | [Configuration](/speedarr/configuration) | config.json, Settings, Gluetun, nodes, schedules, first-run |
 | [Development](/speedarr/development) | Local run, dev vs node mode, tests, Ookla CLI |
 | [API](/speedarr/api) | Authentication, endpoints, API key usage |
 
 ## Quick start (Docker)
 
+Using the [pre-built image](https://github.com/Whats-A-MattR/speedarr/pkgs/container/speedarr) from GitHub Container Registry:
+
 ```bash
-docker build -t speedarr ./app
-docker run -d -p 3000:3000 -v speedarr-config:/config -e SPEEDARR_PASSWORD=your-password speedarr
+docker pull ghcr.io/whats-a-mattr/speedarr:latest
+docker run -d -p 3000:3000 -v speedarr-config:/config -e SPEEDARR_PASSWORD=your-password ghcr.io/whats-a-mattr/speedarr:latest
 ```
+
+Or use an [example compose file](/speedarr/deployment#example-compose-files): `docker compose -f examples/complete.yml up -d`.
 
 Open http://localhost:3000 and sign in (or complete first-run if no password was set).
 

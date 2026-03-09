@@ -1,0 +1,28 @@
+# Speedarr: node(s) only — no dashboard. Report to a remote dashboard.
+# Uses pre-built image from GitHub Container Registry.
+#
+# Run: docker compose -f examples/node-only.yml up -d
+# Then add this node in your main dashboard (Nodes → Add node):
+#   Base URL http://<this-host>:3000  API key node-secret  (ID: node1)
+#
+# For multiple nodes on one host, duplicate the service and change ports/ids/keys.
+# Image: ghcr.io/whats-a-mattr/speedarr (replace with your org/user for your own build)
+
+services:
+  speedarr-node:
+    image: ghcr.io/whats-a-mattr/speedarr:latest
+    container_name: speedarr-node
+    ports:
+      - "3000:3000"
+    environment:
+      MODE: node
+      PORT: 3000
+      SPEEDARR_DATA_DIR: /config
+      SPEEDARR_AGENT_ID: node1
+      SPEEDARR_AGENT_NAME: My node
+      SPEEDARR_API_KEY: node-secret
+    volumes:
+      - speedarr-node-data:/config
+
+volumes:
+  speedarr-node-data:
