@@ -7,7 +7,7 @@ import starlight from "@astrojs/starlight";
 const base = process.env.ASTRO_BASE_PATH || "/speedarr/";
 
 export default defineConfig({
-  site: "https://your-username.github.io",
+  site: "https://speedarr.io",
   base,
   output: "static",
   integrations: [
@@ -17,7 +17,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/Whats-A-MattR/speedarr",
+          href: "https://speedarr.io",
         },
       ],
       sidebar: [
