@@ -1,0 +1,28 @@
+services:
+  gluetun:
+    image: gmcgaw/gluetun:latest
+    container_name: gluetun
+    port:
+      - "8000:8000" # expose gluetun API to the host
+      - "3000:3000" # expose speedarr dashboard to the host
+    environment:
+      # configure gluetun as appropriate for your use case
+      - HTTP_CONTROL_SERVER_AUTH_ROLE={"auth":"apikey","apikey":${GLUETUN_API_KEY}} # set this in environment variables
+
+  speedarr:
+    image: ghcr.io/whats-a-mattr/speedarr:latest
+    container_name: speedarr
+    depends_on:
+      - gluetun
+    network_mode: "service:gluetun"
+    volumes:
+      - speedarr-data:/config
+    environment:
+      - MODE=complete
+      - PORT=3000 # expose speedarr to the host
+      - SPEEDARR_DATA_DIR=/config
+      - SPEEDARR_PASSWORD=change-me
+    restart: unless-stopped
+
+volumes:
+  speedarr-data:
