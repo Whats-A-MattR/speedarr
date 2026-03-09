@@ -8,7 +8,6 @@ const base = process.env.ASTRO_BASE_PATH || "/speedarr/";
 
 export default defineConfig({
   site: "https://speedarr.io",
-  base,
   output: "static",
   integrations: [
     starlight({
