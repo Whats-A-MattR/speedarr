@@ -1,0 +1,82 @@
+---
+title: Deployment
+description: Docker, environment variables, and volumes
+---
+
+## Single container
+
+```bash
+docker build -t speedarr ./app
+docker run -d \
+  -p 3000:3000 \
+  -v speedarr-config:/config \
+  -e SPEEDARR_PASSWORD=your-dashboard-password \
+  speedarr
+```
+
+- **UI:** http://localhost:3000
+- **Data:** Stored in the volume `speedarr-config` at `/config` (SQLite DB and config.json).
+
+## Main + nodes
+
+To run one dashboard and three nodes (e.g. for testing):
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+- **Dashboard:** http://localhost:3000 — log in with the password set in the compose file (or complete first-run in the browser if unset).
+- **Nodes:** Add them in the dashboard under **Nodes → Add node**:
+
+  | Node   | Base URL                       | API key      |
+  |--------|---------------------------------|--------------|
+  | Node 1 | http://speedarr-node1:3000      | node1-secret |
+  | Node 2 | http://speedarr-node2:3000      | node2-secret |
+  | Node 3 | http://speedarr-node3:3000      | node3-secret |
+
+  Use the node **ID** (node1, node2, node3) and **API key** when adding. Base URLs are only reachable from the main container over the Docker network. Nodes are auto-enrolled to report scheduled speed test results to this dashboard.
+
+### Speed tests and connectivity
+
+Speed tests need outbound internet from the container. To verify:
+
+```bash
+docker compose run --rm speedarr-main curl -sI https://www.speedtest.net
+```
+
+### Gluetun (VPN) from Docker
+
+If you use the Gluetun integration:
+
+- **Gluetun on the same host as Speedarr:** In the dashboard set the address to `http://host.docker.internal:8000` (replace 8000 with your Gluetun control port). The included `extra_hosts: host.docker.internal:host-gateway` lets the container reach the host.
+- **Gluetun on a different host:** Use that host's URL (e.g. `http://192.168.1.36:8000`). Ensure Gluetun's control server listens on all interfaces (e.g. `HTTP_CONTROL_SERVER_ADDRESS=:8000`) and the firewall on that host allows the Docker host.
+
+## Environment variables
+
+Only these are read from the environment:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MODE` | `complete` or `node` | `complete` |
+| `PORT` | HTTP port | `3000` |
+| `SPEEDARR_PASSWORD` | Dashboard login password (optional; if unset, set on first-run in browser) | — |
+| `SPEEDARR_DATA_DIR` | Directory for SQLite DB and config.json (use as volume mount) | `.speedarr` (or `/config` in Docker) |
+
+## Volumes
+
+Mount a volume at `/config` (or set `SPEEDARR_DATA_DIR` to that path) so the database and config.json persist:
+
+```bash
+-v speedarr-config:/config
+```
+
+## Build and bake
+
+From the repo root:
+
+```bash
+cd app && npm run build
+docker build -t speedarr ./app
+docker buildx bake build   # if using docker-bake.hcl
+```

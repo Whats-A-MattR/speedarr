@@ -1,0 +1,86 @@
+---
+export const prerender = false;
+import { getResults, getAgents } from '../lib/db.js';
+import { startCron } from '../lib/cron.js';
+
+startCron();
+const agentIdParam = Astro.url.searchParams.get('agent_id') ?? undefined;
+const agents = getAgents();
+const results = getResults(500, undefined, agentIdParam ?? undefined);
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <title>History – Speedarr</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+      header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2rem; background: #1e293b; border-bottom: 1px solid #334155; }
+      header h1 { margin: 0; font-size: 1.25rem; }
+      nav a { color: #94a3b8; text-decoration: none; margin-right: 0.5rem; }
+      nav a:hover { color: #fff; }
+      nav button { background: #334155; color: #94a3b8; border: none; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+      nav button:hover { background: #475569; color: #fff; }
+      main { padding: 2rem; max-width: 900px; margin: 0 auto; }
+      table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+      th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #334155; }
+      th { background: #0f172a; color: #94a3b8; font-weight: 500; }
+      tr:last-child td { border-bottom: none; }
+      .num { font-variant-numeric: tabular-nums; }
+      .filter-row label { margin-right: 0.5rem; color: #94a3b8; }
+      .filter-row select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 0.35rem 0.75rem; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Speedarr</h1>
+      <nav>
+        <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/nodes">Nodes</a> · <a href="/settings">Settings</a>
+        <form method="post" action="/api/auth/logout" style="display:inline; margin-left: 1rem;">
+          <button type="submit">Sign out</button>
+        </form>
+      </nav>
+    </header>
+    <main>
+      <h2>Speed test history</h2>
+      <div class="filter-row" style="margin-bottom: 1rem;">
+        <label for="agent-filter">Filter by agent</label>
+        <select id="agent-filter" onchange="window.location.href = this.value ? '/history?agent_id=' + encodeURIComponent(this.value) : '/history'">
+          <option value="">All agents</option>
+          {agents.map((a) => (
+            <option value={a.agent_id} selected={agentIdParam === a.agent_id}>{a.agent_name}</option>
+          ))}
+        </select>
+      </div>
+      {results.length === 0 ? (
+        <p>No results yet.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Agent</th>
+              <th class="num">Download (Mbps)</th>
+              <th class="num">Upload (Mbps)</th>
+              <th class="num">Latency (ms)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((r) => (
+              <tr>
+                <td>{new Date(r.timestamp).toLocaleString()}</td>
+                <td>{r.agent_name ?? r.agent_id ?? '—'}</td>
+                <td class="num">{r.download_mbps.toFixed(2)}</td>
+                <td class="num">{r.upload_mbps.toFixed(2)}</td>
+                <td class="num">{r.latency_ms != null ? r.latency_ms.toFixed(0) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </main>
+  </body>
+</html>

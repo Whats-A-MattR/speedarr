@@ -1,0 +1,26 @@
+---
+title: Speedarr documentation
+description: Internet speed monitoring dashboard and tooling
+---
+
+Speedarr is an internet speed monitoring dashboard and tooling. It runs speed tests on a schedule, stores results in SQLite, and can run as a full dashboard (complete mode) or as an API-only node (node mode) for remote dashboards.
+
+## Documentation index
+
+| Doc | Description |
+|-----|-------------|
+| [Deployment](/speedarr/deployment) | Docker (single container, main + nodes), environment variables, volumes |
+| [Configuration](/speedarr/configuration) | config.json, Settings, Gluetun, nodes, schedules, first-run |
+| [Development](/speedarr/development) | Local run, dev vs node mode, tests, Ookla CLI |
+| [API](/speedarr/api) | Authentication, endpoints, API key usage |
+
+## Quick start (Docker)
+
+```bash
+docker build -t speedarr ./app
+docker run -d -p 3000:3000 -v speedarr-config:/config -e SPEEDARR_PASSWORD=your-password speedarr
+```
+
+Open http://localhost:3000 and sign in (or complete first-run if no password was set).
+
+For a main dashboard plus three test nodes, see [Deployment → Main + nodes](/speedarr/deployment#main--nodes).

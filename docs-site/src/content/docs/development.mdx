@@ -1,0 +1,62 @@
+---
+title: Development
+description: Local run, dev vs node mode, tests, Ookla CLI
+---
+
+Application code lives in the **`app/`** directory. Run all commands below from the repo root with `app` as the working directory, or `cd app` first.
+
+## Prerequisites
+
+- Node.js 20+
+- [Ookla Speedtest CLI](https://www.speedtest.net/apps/cli) on your PATH (for local speed tests)
+
+## Setup
+
+```bash
+cd app
+npm install
+npm run dev
+```
+
+- **Main app:** `npm run dev` — complete mode on port 3000; data in `app/.speedarr/` (or `.speedarr/` if you run from inside `app/`).
+
+## Node mode (second instance)
+
+To test the "Nodes" feature locally, run a second instance as a node (from another terminal, also in `app/`):
+
+```bash
+cd app
+npm run dev:node
+```
+
+That starts a node on **port 3001** with data in **`app/.speedarr-node/`** (separate DB and config). The node creates `.speedarr-node/config.json` with a generated API key on first run; check the terminal or the file for the key. In the main dashboard go to **Nodes → Add node** and add:
+
+- **Base URL:** `http://localhost:3001`
+- **API key:** The node's API key (from its config or startup logs).
+
+The dashboard will auto-enroll the node so its scheduled speed test results appear in the dashboard.
+
+## Modes
+
+- **Complete mode** (`MODE=complete`, default): Scheduler, speed tests, and full Astro dashboard.
+- **Node mode** (`MODE=node`): Scheduler and API only; no UI. Used when this instance is a "node" reporting to another dashboard.
+
+## Build and test
+
+From the `app/` directory:
+
+```bash
+cd app
+npm run build
+npm run test
+```
+
+## Project layout
+
+- **Repo root:** `docs-site/`, `docker-compose.yml`, `README.md`, `.github/`, etc.
+- **`app/`** — Application code:
+  - `src/` — Astro app (pages, API routes, lib).
+  - `migrations/` — SQLite schema migrations.
+  - `scripts/` — e.g. docker entrypoint, migrations.
+  - `package.json`, `astro.config.mjs`, `Dockerfile`, etc.
+- **`docs-site/`** — Documentation site (Astro, MDX, GitHub Pages).

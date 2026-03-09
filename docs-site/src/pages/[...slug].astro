@@ -1,0 +1,19 @@
+---
+import { getCollection, getEntry } from "astro:content";
+import DocLayout from "../layouts/DocLayout.astro";
+
+export async function getStaticPaths() {
+  const docs = await getCollection("docs");
+  return docs
+    .filter((e) => e.slug !== "index")
+    .map((e) => ({ params: { slug: e.slug } }));
+}
+
+const { slug } = Astro.params;
+if (!slug) return Astro.redirect(import.meta.env.BASE_URL || "/");
+
+const entry = await getEntry("docs", slug);
+if (!entry) return new Response(null, { status: 404 });
+---
+
+<DocLayout entry={entry} />

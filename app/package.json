@@ -1,0 +1,31 @@
+{
+  "name": "speedarr",
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "node -r dotenv/config ./node_modules/.bin/astro dev",
+    "dev:node": "cross-env MODE=node PORT=3001 node -r dotenv/config ./node_modules/.bin/astro dev --port 3001 ",
+    "build": "astro build",
+    "preview": "node -r dotenv/config ./node_modules/.bin/astro preview",
+    "astro": "astro",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:new": "node scripts/new-migration.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@astrojs/node": "^9.0.2",
+    "astro": "^5.17.1",
+    "better-sqlite3": "^11.6.0",
+    "chart.js": "^4.4.6",
+    "dotenv": "^16.4.5",
+    "speedtest-net": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "cross-env": "^7.0.3",
+    "vitest": "^2.1.6"
+  }
+}

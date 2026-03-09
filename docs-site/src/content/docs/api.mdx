@@ -1,0 +1,63 @@
+---
+title: API
+description: Authentication, endpoints, API key usage
+---
+
+## Authentication
+
+Most endpoints require either:
+
+- **Dashboard session:** Cookie set after logging in via the UI, or
+- **API key:** Sent via header (see below).
+
+Set the API key in **Settings → General** in the dashboard. Then use one of:
+
+- `X-API-Key: <key>`
+- `Authorization: Bearer <key>`
+
+## Endpoints
+
+### Health (no key)
+
+- **`GET /api/health`** — Returns `{ ok, mode, version }`. No authentication.
+
+### Results
+
+- **`GET /api/results?limit=100&since=<timestamp>`** — List speed results. Supports `agent_id` query to filter. Key or session required.
+- **`GET /api/results/latest`** — Latest result. Key or session required.
+
+### Speed test
+
+- **`POST /api/test-now`** — Run a speed test on this instance. Session or API key required. Used by the dashboard "Test now" and by the main dashboard when triggering tests on the local node.
+
+### Nodes
+
+- **`GET /api/nodes`** — List nodes (session required).
+- **`POST /api/nodes`** — Add a node (session required). The dashboard auto-enrolls the node so it reports scheduled results here.
+- **`PATCH /api/nodes/:id`** — Update a node (session required).
+- **`DELETE /api/nodes/:id`** — Remove a node (session required).
+- **`POST /api/nodes/:id/test`** — Trigger a speed test on that node (session required).
+- **`GET /api/nodes/:id/config`** — Get node config (intervals, report endpoints) — session required.
+- **`PATCH /api/nodes/:id/config`** — Update node config (e.g. speed test interval) — session required.
+- **`POST /api/nodes/report`** — Used by nodes to report a scheduled speed test result. Auth: `X-API-Key` must match the node's API key for the given `nodeId` in the body.
+
+### Gluetun
+
+- **`GET /api/gluetun/config`** — Get Gluetun config (address only; session required).
+- **`PUT /api/gluetun/config`** — Save Gluetun address and optional API key (session required).
+- **`POST /api/gluetun/test`** — Test Gluetun connection with given address/key (session required).
+- **`POST /api/gluetun/check`** — Fetch Gluetun status and persist it (session required). Used by "Update status" and by the polling job.
+
+### Settings
+
+- **`GET /api/settings`** — Get settings (session required).
+- **`PATCH /api/settings`** — Update settings (session required).
+
+### Auth
+
+- **`POST /api/auth/login`** — Log in (form body: password).
+- **`POST /api/auth/logout`** — Log out (session required).
+
+## Node mode
+
+When running with `MODE=node`, only `/api/*` routes are enabled; all other paths return 404. The node exposes `POST /api/test-now`, `GET/PATCH /api/config`, and reports results to enrolled dashboards via `POST /api/nodes/report` on each dashboard.

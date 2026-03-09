@@ -1,0 +1,58 @@
+---
+title: Configuration
+description: config.json, Settings, Gluetun, nodes, first-run
+---
+
+## Overview
+
+- **Environment:** Only `MODE`, `PORT`, `SPEEDARR_PASSWORD`, and `SPEEDARR_DATA_DIR` are read from the environment (see [Deployment](/speedarr/deployment#environment-variables)).
+- **Everything else** is stored in **config.json** inside the data directory. The easiest way to manage it is the **Settings** page in the dashboard.
+
+## First run
+
+On first run, if no `SPEEDARR_PASSWORD` is set, the app shows a first-run flow: a password is generated, you copy or download it, then sign in with it. That password is stored in config.json.
+
+## config.json
+
+The file lives at `<DATA_DIR>/config.json` (e.g. `/config/config.json` in Docker, `.speedarr/config.json` locally). You can edit it by hand, but the dashboard **Settings** page is the recommended way.
+
+Typical keys (set via Settings or written by the app):
+
+| Key | Description |
+|-----|-------------|
+| `SPEEDARR_PASSWORD` | Dashboard login (hashed); can be overridden by env |
+| `SPEEDARR_API_KEY` | API key for nodes and API access |
+| `SPEEDARR_AGENT_ID` | Agent ID for this instance (e.g. node name) |
+| `SPEEDARR_AGENT_NAME` | Display name for this agent |
+| `SPEEDARR_INTERVAL_MINUTES` | Speed test interval (minutes) |
+| `SPEEDARR_RETENTION_DAYS` | How long to keep results (days) |
+| `SPEEDARR_GLUETUN_INTERVAL_MINUTES` | Gluetun check interval (minutes) |
+| `GLUETUN_ADDRESS` | Gluetun HTTP control server URL |
+| `GLUETUN_API_KEY` | Optional API key for Gluetun |
+
+The file is portable: copy config.json (and the `db/` folder if you want history) to another instance.
+
+## Settings in the dashboard
+
+- **Settings → General:** API key, agent ID, agent name.
+- **Settings → Speed test:** Interval (minutes), retention (days).
+- **Settings → Gluetun polling:** How often to check Gluetun (independent of speed test schedule).
+
+## Gluetun (VPN)
+
+Configure in the dashboard: **Configure Gluetun** in the VPN section.
+
+- **Address:** Full URL of the Gluetun HTTP control server (e.g. `http://host:8000`).
+- **API key (optional):** If Gluetun has API key auth enabled, set the same key here.
+
+Speedarr calls Gluetun's `/v1/publicip/ip` and `/v1/vpn/status` and shows VPN status and public IP. Use **Update status** on the card to refresh, or rely on the Gluetun polling interval in Settings.
+
+## Nodes
+
+Nodes are remote Speedarr instances (node mode) that run speed tests and report to this dashboard.
+
+- **Nodes → Add node:** Enter base URL (e.g. `http://speedarr-node1:3000`), API key (must match the node's `SPEEDARR_API_KEY`), and optional name/ID.
+- The dashboard stores nodes and **auto-enrolls** each node to report scheduled speed test results here. You can trigger **Test now** manually; scheduled results from nodes also appear in dashboard and history.
+- **Intervals:** Use the Intervals button per node to set that node's speed test interval (minutes).
+
+For node mode and API key setup, see [Development](/speedarr/development#node-mode-second-instance).

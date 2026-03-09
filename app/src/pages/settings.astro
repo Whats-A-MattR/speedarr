@@ -1,0 +1,170 @@
+---
+export const prerender = false;
+import { getEffectiveConfig, getGluetunPollingConfig, getAgentIdentity } from '../lib/config.js';
+import { getSetting } from '../lib/config-file.js';
+import { startCron } from '../lib/cron.js';
+
+startCron();
+const config = getEffectiveConfig();
+const gluetunPolling = getGluetunPollingConfig();
+const { agentId, agentName } = getAgentIdentity();
+const apiKey = getSetting('SPEEDARR_API_KEY') ?? '';
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Settings – Speedarr</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+      header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2rem; background: #1e293b; border-bottom: 1px solid #334155; }
+      header h1 { margin: 0; font-size: 1.25rem; }
+      nav a { color: #94a3b8; text-decoration: none; margin-right: 0.5rem; }
+      nav a:hover { color: #fff; }
+      nav button { background: #334155; color: #94a3b8; border: none; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+      nav button:hover { background: #475569; color: #fff; }
+      main { padding: 2rem; max-width: 600px; margin: 0 auto; }
+      .form-section { background: #1e293b; padding: 1.25rem; border-radius: 8px; margin-bottom: 2rem; }
+      .form-section h2, .form-section h3 { margin-top: 0; }
+      .form-section-desc { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem; }
+      .form-row { margin-bottom: 0.75rem; }
+      .form-row label { display: block; margin-bottom: 0.25rem; color: #94a3b8; }
+      .form-row input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.4rem 0.6rem; border-radius: 4px; width: 100%; }
+      .form-row .hint { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
+      button.btn { background: #3b82f6; color: #fff; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; }
+      button.btn:hover { background: #2563eb; }
+      .msg { padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+      .msg.err { background: #7f1d1d; color: #fca5a5; }
+      .msg.ok { background: #14532d; color: #86efac; }
+      .msg.hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Speedarr</h1>
+      <nav>
+        <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/nodes">Nodes</a> · <a href="/settings">Settings</a>
+        <form method="post" action="/api/auth/logout" style="display:inline; margin-left: 1rem;">
+          <button type="submit">Sign out</button>
+        </form>
+      </nav>
+    </header>
+    <main>
+      <h2>Settings</h2>
+      <p>All configuration is stored in <code>config.json</code> in your data directory. No env vars needed except mode and password.</p>
+      <div id="msg" class="msg hidden" role="status"></div>
+      <form id="general-form" class="form-section">
+        <h3>General</h3>
+        <div class="form-row">
+          <label for="api-key">API key</label>
+          <input type="password" id="api-key" name="apiKey" value={apiKey} placeholder="This server's key for API access" autocomplete="off" />
+          <p class="hint">This instance’s key. Used when something calls this server’s API without a login (e.g. <code>/api/results</code>, <code>/api/config</code>) or when you add this server as a node on another dashboard. Leave empty to disable key-based API access.</p>
+        </div>
+        <div class="form-row">
+          <label for="agent-id">Agent ID</label>
+          <input type="text" id="agent-id" name="agentId" value={agentId} placeholder="local" />
+          <p class="hint">Identifier for this node in speed results.</p>
+        </div>
+        <div class="form-row">
+          <label for="agent-name">Agent name</label>
+          <input type="text" id="agent-name" name="agentName" value={agentName} placeholder="Local" />
+        </div>
+        <div class="form-row">
+          <button type="submit" class="btn">Save</button>
+        </div>
+      </form>
+      <form id="settings-form" class="form-section">
+        <h3>Speed test schedule &amp; retention</h3>
+        <div class="form-row">
+          <label for="interval-minutes">Interval (minutes)</label>
+          <input type="number" id="interval-minutes" name="intervalMinutes" min="0" max="525600" value={config.intervalMinutes} />
+          <p class="hint">0 = default every 6 hours.</p>
+        </div>
+        <div class="form-row">
+          <label for="retention-days">Retention (days)</label>
+          <input type="number" id="retention-days" name="retentionDays" min="0" value={config.retentionDays} />
+          <p class="hint">Keep results for this many days. 0 = keep all.</p>
+        </div>
+        <button type="submit" class="btn">Save</button>
+      </form>
+      <form id="gluetun-polling-form" class="form-section">
+        <h3>Gluetun polling</h3>
+        <p class="form-section-desc">How often to check Gluetun (VPN status and public IP). Independent of speed test schedule.</p>
+        <div class="form-row">
+          <label for="gluetun-interval-minutes">Interval (minutes)</label>
+          <input type="number" id="gluetun-interval-minutes" name="gluetunIntervalMinutes" min="1" max="525600" value={gluetunPolling.intervalMinutes} />
+          <p class="hint">Default 5 minutes.</p>
+        </div>
+        <button type="submit" class="btn">Save</button>
+      </form>
+    </main>
+    <script>
+      const msgEl = document.getElementById('msg');
+      function showMsg(text, isErr) {
+        msgEl.classList.remove('hidden');
+        msgEl.textContent = text;
+        msgEl.className = 'msg ' + (isErr ? 'err' : 'ok');
+      }
+      document.getElementById('general-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          const r = await fetch('/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              SPEEDARR_API_KEY: document.getElementById('api-key').value,
+              SPEEDARR_AGENT_ID: document.getElementById('agent-id').value.trim() || 'local',
+              SPEEDARR_AGENT_NAME: document.getElementById('agent-name').value.trim() || 'Local',
+            }),
+          });
+          const data = await r.json();
+          if (!r.ok) showMsg(data.error || 'Failed to save', true);
+          else showMsg('General settings saved.', false);
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+        }
+      });
+      document.getElementById('settings-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const intervalMinutes = parseInt(document.getElementById('interval-minutes').value, 10) || 0;
+        const retentionDays = parseInt(document.getElementById('retention-days').value, 10) || 0;
+        try {
+          const r = await fetch('/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              SPEEDARR_INTERVAL_MINUTES: String(intervalMinutes),
+              SPEEDARR_RETENTION_DAYS: String(retentionDays),
+            }),
+          });
+          const data = await r.json();
+          if (!r.ok) showMsg(data.error || 'Failed to save', true);
+          else showMsg('Settings saved.', false);
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+        }
+      });
+      document.getElementById('gluetun-polling-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const gluetunIntervalMinutes = parseInt(document.getElementById('gluetun-interval-minutes').value, 10) || 5;
+        try {
+          const r = await fetch('/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              SPEEDARR_GLUETUN_INTERVAL_MINUTES: String(Math.max(1, gluetunIntervalMinutes)),
+            }),
+          });
+          const data = await r.json();
+          if (!r.ok) showMsg(data.error || 'Failed to save', true);
+          else showMsg('Gluetun polling settings saved.', false);
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+        }
+      });
+    </script>
+  </body>
+</html>
