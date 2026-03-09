@@ -56,7 +56,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract version
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          echo "IMAGE_REPO=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -64,8 +66,8 @@ jobs:
           file: app/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/speedarr:${{ steps.version.outputs.VERSION }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/speedarr:latest
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.IMAGE_REPO }}/speedarr:${{ steps.version.outputs.VERSION }}
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.IMAGE_REPO }}/speedarr:latest
           build-args: |
             APP_VERSION=${{ steps.version.outputs.VERSION }}
           platforms: linux/amd64,linux/arm64
@@ -80,7 +82,9 @@ jobs:
     steps:
       - name: Set version
         id: ver
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          echo "IMAGE_REPO=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -89,7 +93,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Run container and check health
         run: |
-          IMAGE=${{ env.REGISTRY }}/${{ github.repository_owner }}/speedarr:${{ steps.ver.outputs.VERSION }}
+          IMAGE=${{ env.REGISTRY }}/${{ steps.ver.outputs.IMAGE_REPO }}/speedarr:${{ steps.ver.outputs.VERSION }}
           docker run -d --name speedarr -p 3000:3000 \
             -e SPEEDARR_PASSWORD=test -e SPEEDARR_API_KEY=testkey \
             "$IMAGE"
