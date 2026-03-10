@@ -1,0 +1,341 @@
+---
+export const prerender = false;
+import { getConnections, getServiceById, getServices } from '../../lib/config-file.js';
+import { startCron } from '../../lib/cron.js';
+
+startCron();
+
+const { id } = Astro.params;
+const service = id ? getServiceById(id) : null;
+if (!service) return Astro.redirect('/services');
+const allServices = getServices();
+const connections = getConnections();
+const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== service.id);
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{service.name} – Speedarr</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+      header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2rem; background: #1e293b; border-bottom: 1px solid #334155; }
+      header h1 { margin: 0; font-size: 1.25rem; }
+      nav a { color: #94a3b8; text-decoration: none; margin-right: 0.5rem; }
+      nav a:hover { color: #fff; }
+      nav button { background: #334155; color: #94a3b8; border: none; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+      nav button:hover { background: #475569; color: #fff; }
+      main { padding: 2rem; max-width: 760px; margin: 0 auto; }
+      .page-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+      .page-header h2 { margin: 0; }
+      .back-link { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
+      .back-link:hover { color: #fff; }
+      .type-pill { font-size: 0.75rem; text-transform: uppercase; padding: 0.15rem 0.45rem; border-radius: 4px; }
+      .type-sabnzbd { background: #1d4ed8; color: #bfdbfe; }
+      .type-gluetun { background: #312e81; color: #c4b5fd; }
+      .form-section { background: #1e293b; padding: 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; }
+      .form-section h3 { margin-top: 0; }
+      .form-section-desc { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem; }
+      .form-row { margin-bottom: 0.75rem; }
+      .form-row label { display: block; margin-bottom: 0.25rem; color: #94a3b8; }
+      .form-row input[type="text"], .form-row input[type="password"], .form-row input[type="number"], .form-row select { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.4rem 0.6rem; border-radius: 4px; width: 100%; }
+      .form-row input[type="checkbox"] { margin-right: 0.4rem; }
+      .form-row .hint { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
+      button.btn { background: #3b82f6; color: #fff; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; }
+      button.btn:hover { background: #2563eb; }
+      button.btn-sm { background: #334155; color: #e2e8f0; border: none; padding: 0.25rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+      button.btn-sm:hover { background: #475569; }
+      .msg { padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+      .msg.err { background: #7f1d1d; color: #fca5a5; }
+      .msg.ok { background: #14532d; color: #86efac; }
+      .msg.hidden { display: none; }
+      .schedule-table { width: 100%; border-collapse: collapse; margin-bottom: 0.5rem; font-size: 0.9rem; }
+      .schedule-table th { color: #94a3b8; font-weight: normal; text-align: left; padding: 0.25rem 0.4rem; }
+      .schedule-table td { padding: 0.25rem 0.4rem; }
+      .schedule-table input[type="time"], .schedule-table input[type="number"] { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.3rem 0.4rem; border-radius: 4px; width: 100%; }
+      .test-result { font-size: 0.85rem; margin-top: 0.4rem; color: #94a3b8; }
+      .inline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+      @media (max-width: 700px) { .inline-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Speedarr</h1>
+      <nav>
+        <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/nodes">Nodes</a> · <a href="/services">Services</a> · <a href="/settings">Settings</a>
+        <form method="post" action="/api/auth/logout" style="display:inline; margin-left: 1rem;">
+          <button type="submit">Sign out</button>
+        </form>
+      </nav>
+    </header>
+    <main>
+      <div class="page-header">
+        <a href="/services" class="back-link">← Services</a>
+        <h2>{service.name}</h2>
+        <span class={`type-pill ${service.type === 'sabnzbd' ? 'type-sabnzbd' : 'type-gluetun'}`}>{service.type}</span>
+      </div>
+      <div id="msg" class="msg hidden" role="status"></div>
+
+      <form id="conn-form" class="form-section">
+        <h3>Connection</h3>
+        <div class="inline-grid">
+          <div class="form-row">
+            <label for="svc-name">Name</label>
+            <input type="text" id="svc-name" value={service.name} />
+          </div>
+          <div class="form-row">
+            <label for="svc-connection">Connection ID</label>
+            <select id="svc-connection">
+              {connections.map((connection) => (
+                <option value={connection.id} selected={connection.id === (service.connectionId || 'default')}>
+                  {connection.name} ({connection.id})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div class="inline-grid">
+          <div class="form-row">
+            <label for="svc-url">URL</label>
+            <input type="text" id="svc-url" placeholder={service.type === 'gluetun' ? 'http://gluetun:8000' : 'http://sabnzbd:8080'} value={service.url} />
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="svc-api-key">API key</label>
+          <input
+            type="password"
+            id="svc-api-key"
+            placeholder="API key"
+            autocomplete="off"
+            value={service.apiKey ? '••••••••' : ''}
+            data-has-key={service.apiKey ? 'true' : 'false'}
+          />
+          <p class="hint">Focus and leave blank to clear the stored key.</p>
+        </div>
+
+        {service.type === 'gluetun' && (
+          <div class="form-row">
+            <label for="svc-poll">Polling interval (minutes)</label>
+            <input type="number" id="svc-poll" min="1" max="1440" value={service.pollIntervalMinutes} />
+          </div>
+        )}
+
+        {service.type === 'sabnzbd' && (
+          <>
+            <div class="form-row">
+              <label for="svc-vpn">Linked VPN service (for kill switch)</label>
+              <select id="svc-vpn">
+                <option value="">None</option>
+                {vpnServices.map((vpn) => (
+                  <option value={vpn.id} selected={vpn.id === service.vpnServiceId}>{vpn.name}</option>
+                ))}
+              </select>
+              <p class="hint">Select which Gluetun service this client should follow when kill switch is enabled.</p>
+            </div>
+            <div class="inline-grid">
+              <div class="form-row">
+                <label>
+                  <input type="checkbox" id="svc-kill-switch" checked={service.killSwitchEnabled} />
+                  Enable kill switch
+                </label>
+              </div>
+              <div class="form-row">
+                <label>
+                  <input type="checkbox" id="svc-speed-limit" checked={service.speedtestLimitEnabled} />
+                  Enable speed-test limit
+                </label>
+              </div>
+            </div>
+            <div class="form-row">
+              <label for="svc-speed-percent">Speed-test limit %</label>
+              <input type="number" id="svc-speed-percent" min="1" max="100" value={service.speedtestLimitPercent} />
+            </div>
+          </>
+        )}
+
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <button type="submit" class="btn">Save</button>
+          <button type="button" id="test-btn" class="btn-sm">Test connection</button>
+        </div>
+        <p id="test-result" class="test-result"></p>
+      </form>
+
+      {service.type === 'sabnzbd' && (
+        <form id="schedule-form" class="form-section">
+          <h3>Bandwidth schedule</h3>
+          <p class="form-section-desc">Applied per service every minute. If no schedule rule matches, Speedarr falls back to the speed-test limit if enabled.</p>
+          <div class="form-row">
+            <label>
+              <input type="checkbox" id="schedule-enabled" checked={service.scheduleEnabled} />
+              Enable schedule
+            </label>
+          </div>
+          <table class="schedule-table">
+            <thead>
+              <tr><th>Start</th><th>End</th><th>Limit %</th><th></th></tr>
+            </thead>
+            <tbody id="schedule-tbody"></tbody>
+          </table>
+          <button type="button" id="add-rule" class="btn-sm">+ Add rule</button>
+          <div class="form-row" style="margin-top:0.75rem;">
+            <label for="default-limit">Default limit % (when no rule matches)</label>
+            <input type="number" id="default-limit" min="0" max="100" value={service.scheduleDefaultLimit} />
+            <p class="hint">0 = unlimited when outside all scheduled windows.</p>
+          </div>
+          <button type="submit" class="btn">Save schedule</button>
+        </form>
+      )}
+    </main>
+    <script define:vars={{ serviceId: service.id, serviceType: service.type, initialRules: service.schedule }}>
+      const msgEl = document.getElementById('msg');
+      function showMsg(text, isErr) {
+        msgEl.classList.remove('hidden');
+        msgEl.textContent = text;
+        msgEl.className = 'msg ' + (isErr ? 'err' : 'ok');
+      }
+
+      const apiKeyInput = document.getElementById('svc-api-key');
+      apiKeyInput?.addEventListener('focus', () => {
+        if (apiKeyInput.dataset.hasKey === 'true') {
+          apiKeyInput.value = '';
+          apiKeyInput.dataset.hasKey = 'false';
+        }
+      });
+
+      document.getElementById('conn-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const body = {
+          name: document.getElementById('svc-name').value.trim(),
+          connectionId: document.getElementById('svc-connection').value.trim() || 'default',
+          url: document.getElementById('svc-url').value.trim().replace(/\/$/, ''),
+        };
+        if (apiKeyInput.dataset.hasKey !== 'true') {
+          body.apiKey = apiKeyInput.value;
+        }
+        if (serviceType === 'gluetun') {
+          body.pollIntervalMinutes = parseInt(document.getElementById('svc-poll').value, 10) || 5;
+        } else {
+          body.vpnServiceId = document.getElementById('svc-vpn').value;
+          body.killSwitchEnabled = document.getElementById('svc-kill-switch').checked;
+          body.speedtestLimitEnabled = document.getElementById('svc-speed-limit').checked;
+          body.speedtestLimitPercent = Math.max(1, Math.min(100, parseInt(document.getElementById('svc-speed-percent').value, 10) || 80));
+        }
+        try {
+          const r = await fetch('/api/services/' + serviceId, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await r.json();
+          if (!r.ok) {
+            showMsg(data.error || 'Failed to save', true);
+            return;
+          }
+          showMsg('Connection saved.', false);
+          if (body.apiKey !== undefined) {
+            apiKeyInput.dataset.hasKey = body.apiKey ? 'true' : 'false';
+            apiKeyInput.value = body.apiKey ? '••••••••' : '';
+          }
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+        }
+      });
+
+      document.getElementById('test-btn')?.addEventListener('click', async () => {
+        const resultEl = document.getElementById('test-result');
+        const url = document.getElementById('svc-url').value.trim().replace(/\/$/, '');
+        const apiKey = apiKeyInput.dataset.hasKey === 'true' ? '' : apiKeyInput.value;
+        resultEl.textContent = 'Testing...';
+        try {
+          const r = await fetch('/api/services/' + serviceId + '/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, apiKey }),
+          });
+          const data = await r.json();
+          if (!data.ok) {
+            resultEl.textContent = 'Failed: ' + (data.error || 'Unknown error');
+            return;
+          }
+          if (serviceType === 'gluetun') {
+            const loc = [data.city, data.region, data.country].filter(Boolean).join(', ');
+            resultEl.textContent = 'Connected. VPN: ' + data.status + (data.public_ip ? ' · ' + data.public_ip : '') + (loc ? ' (' + loc + ')' : '');
+          } else {
+            resultEl.textContent = 'Connected.' + (data.version ? ' Version: ' + data.version : '');
+          }
+        } catch (err) {
+          resultEl.textContent = 'Error: ' + err.message;
+        }
+      });
+
+      if (serviceType === 'sabnzbd') {
+        let scheduleRules = [];
+        try {
+          scheduleRules = JSON.parse(initialRules || '[]');
+        } catch {
+          scheduleRules = [];
+        }
+        function renderRules() {
+          const tbody = document.getElementById('schedule-tbody');
+          if (!tbody) return;
+          tbody.innerHTML = '';
+          scheduleRules.forEach((rule, i) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+              '<td><input type="time" value="' + rule.start + '" data-idx="' + i + '" data-field="start" /></td>' +
+              '<td><input type="time" value="' + rule.end + '" data-idx="' + i + '" data-field="end" /></td>' +
+              '<td><input type="number" min="0" max="100" value="' + rule.limitPercent + '" data-idx="' + i + '" data-field="limitPercent" /></td>' +
+              '<td><button type="button" class="btn-sm" data-remove="' + i + '">Remove</button></td>';
+            tbody.appendChild(tr);
+          });
+          tbody.querySelectorAll('input').forEach((input) => {
+            input.addEventListener('change', (e) => {
+              const el = e.target;
+              const idx = parseInt(el.dataset.idx, 10);
+              const field = el.dataset.field;
+              scheduleRules[idx][field] = field === 'limitPercent' ? parseInt(el.value, 10) || 0 : el.value;
+            });
+          });
+          tbody.querySelectorAll('[data-remove]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+              const removeEl = e.target;
+              scheduleRules.splice(parseInt(removeEl.dataset.remove, 10), 1);
+              renderRules();
+            });
+          });
+        }
+        renderRules();
+
+        document.getElementById('add-rule')?.addEventListener('click', () => {
+          scheduleRules.push({ start: '00:00', end: '06:00', limitPercent: 100 });
+          renderRules();
+        });
+
+        document.getElementById('schedule-form')?.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const enabled = document.getElementById('schedule-enabled').checked;
+          const defaultLimit = parseInt(document.getElementById('default-limit').value, 10) || 0;
+          try {
+            const r = await fetch('/api/services/' + serviceId, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                scheduleEnabled: enabled,
+                schedule: JSON.stringify(scheduleRules),
+                scheduleDefaultLimit: Math.max(0, Math.min(100, defaultLimit)),
+              }),
+            });
+            const data = await r.json();
+            if (!r.ok) showMsg(data.error || 'Failed to save', true);
+            else showMsg('Schedule saved.', false);
+          } catch (err) {
+            showMsg(err.message || 'Request failed', true);
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

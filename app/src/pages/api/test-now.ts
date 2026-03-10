@@ -1,8 +1,9 @@
 import type { APIRoute } from 'astro';
 import { validateSession } from '../../lib/auth.js';
-import { getSetting } from '../../lib/config-file.js';
+import { getServices, getSetting } from '../../lib/config-file.js';
 import { runAndPersistSpeedtest } from '../../lib/speedtest.js';
 import { fetchAndPersistGluetunStatus } from '../../lib/gluetun.js';
+import { warn as logWarn } from '../../lib/logger.js';
 
 export const prerender = false;
 
@@ -34,7 +35,19 @@ export const POST: APIRoute = async ({ request }) => {
   }
   try {
     const result = await runAndPersistSpeedtest();
-    await fetchAndPersistGluetunStatus();
+    const gluetunServices = getServices().filter((service) => service.type === 'gluetun' && service.enabled);
+    const pollResults = await Promise.allSettled(
+      gluetunServices.map((service) => fetchAndPersistGluetunStatus(service))
+    );
+    for (const [idx, pollResult] of pollResults.entries()) {
+      if (pollResult.status === 'rejected') {
+        const service = gluetunServices[idx];
+        logWarn(
+          `[speedarr] test-now: Gluetun poll failed for ${service?.name ?? service?.id ?? 'unknown service'}:`,
+          (pollResult.reason as Error)?.message ?? String(pollResult.reason)
+        );
+      }
+    }
     return new Response(
       JSON.stringify({
         result: {

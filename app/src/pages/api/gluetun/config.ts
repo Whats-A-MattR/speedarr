@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 import { validateSession } from '../../../lib/auth.js';
-import { getGluetunConfig } from '../../../lib/config.js';
+import { getGluetunConfig, getGluetunPollingConfig } from '../../../lib/config.js';
 import { setSetting } from '../../../lib/config-file.js';
+import { restartCron } from '../../../lib/cron.js';
 
 export const prerender = false;
 
@@ -24,24 +25,24 @@ function jsonResponse(body: object, status = 200) {
 export const GET: APIRoute = async ({ request }) => {
   if (!hasSession(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
   const { address, apiKey } = getGluetunConfig();
-  return jsonResponse({
-    address,
-    hasApiKey: !!apiKey,
-  });
+  const { intervalMinutes } = getGluetunPollingConfig();
+  return jsonResponse({ address, hasApiKey: !!apiKey, intervalMinutes });
 };
 
 export const PATCH: APIRoute = async ({ request }) => {
   if (!hasSession(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
   if (request.method !== 'PATCH') return jsonResponse({ error: 'Method not allowed' }, 405);
-  let body: { address?: string; apiKey?: string };
+  let body: { address?: string; apiKey?: string; intervalMinutes?: number };
   try {
     body = await request.json();
   } catch {
     return jsonResponse({ error: 'Invalid JSON' }, 400);
   }
-  const address = typeof body.address === 'string' ? body.address.trim().replace(/\/$/, '') : '';
-  const apiKey = typeof body.apiKey === 'string' ? body.apiKey : undefined;
-  setSetting('GLUETUN_ADDRESS', address);
-  if (apiKey !== undefined) setSetting('GLUETUN_API_KEY', apiKey);
+  if (typeof body.address === 'string') setSetting('GLUETUN_ADDRESS', body.address.trim().replace(/\/$/, ''));
+  if (typeof body.apiKey === 'string') setSetting('GLUETUN_API_KEY', body.apiKey);
+  if (typeof body.intervalMinutes === 'number' && body.intervalMinutes >= 1) {
+    setSetting('SPEEDARR_GLUETUN_INTERVAL_MINUTES', String(Math.round(body.intervalMinutes)));
+  }
+  restartCron();
   return jsonResponse({ ok: true });
 };

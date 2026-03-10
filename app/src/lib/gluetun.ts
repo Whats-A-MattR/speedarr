@@ -3,8 +3,8 @@
  * See: https://github.com/qdm12/gluetun/wiki/HTTP-control-server
  * Endpoints: GET /v1/publicip/ip (public IP, optional geo), GET /v1/vpn/status (VPN status; works for both OpenVPN and WireGuard).
  */
-import { getGluetunConfig } from './config.js';
 import { insertGluetunStatus } from './db.js';
+import type { ServiceConfig } from './config-file.js';
 import { log as logger, warn as logWarn } from './logger.js';
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -101,20 +101,20 @@ export async function fetchGluetunStatusWithConfig(
 }
 
 /**
- * Fetch Gluetun status using saved config (settings then env). Returns null if not configured or request fails.
+ * Fetch Gluetun status from a configured service. Returns null if not configured or request fails.
  */
-export async function fetchGluetunStatus(): Promise<GluetunStatus | null> {
-  const { address, apiKey } = getGluetunConfig();
-  return fetchGluetunStatusWithConfig(address, apiKey);
+export async function fetchGluetunStatus(service: ServiceConfig): Promise<GluetunStatus | null> {
+  return fetchGluetunStatusWithConfig(service.url, service.apiKey);
 }
 
 /**
- * Fetch Gluetun status and persist to DB if configured. Call from cron or after speed test.
+ * Fetch Gluetun status and persist to DB if configured. Call from cron or after manual checks.
  */
-export async function fetchAndPersistGluetunStatus(): Promise<void> {
-  const status = await fetchGluetunStatus();
+export async function fetchAndPersistGluetunStatus(service: ServiceConfig): Promise<GluetunStatus | null> {
+  const status = await fetchGluetunStatus(service);
   if (!status) return;
   insertGluetunStatus({
+    service_id: service.id,
     timestamp: status.timestamp,
     public_ip: status.public_ip || null,
     vpn_status: status.vpn_status,
@@ -125,6 +125,7 @@ export async function fetchAndPersistGluetunStatus(): Promise<void> {
     raw_openvpn_status: status.raw_openvpn_status,
   });
   logger(
-    `[speedarr] Gluetun: VPN ${status.vpn_status}, public IP ${status.public_ip || '—'}${status.city ? ` (${[status.city, status.region, status.country].filter(Boolean).join(', ')})` : ''}`
+    `[speedarr] ${service.name}: VPN ${status.vpn_status}, public IP ${status.public_ip || '—'}${status.city ? ` (${[status.city, status.region, status.country].filter(Boolean).join(', ')})` : ''}`
   );
+  return status;
 }

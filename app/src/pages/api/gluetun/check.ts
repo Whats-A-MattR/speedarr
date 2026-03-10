@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { validateSession } from '../../../lib/auth.js';
-import { getGluetunConfig } from '../../../lib/config.js';
+import { getServices } from '../../../lib/config-file.js';
 import { fetchAndPersistGluetunStatus } from '../../../lib/gluetun.js';
 import { getLatestGluetunStatus } from '../../../lib/db.js';
 
@@ -26,12 +26,23 @@ function jsonResponse(body: object, status = 200) {
 export const POST: APIRoute = async ({ request }) => {
   if (!hasSession(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
-  if (!getGluetunConfig().address) {
-    return jsonResponse({ error: 'Gluetun not configured' }, 400);
-  }
+
+  let body: { serviceId?: string } = {};
   try {
-    await fetchAndPersistGluetunStatus();
-    const latest = getLatestGluetunStatus();
+    body = await request.json();
+  } catch {
+    // optional body
+  }
+
+  const gluetunServices = getServices().filter((s) => s.type === 'gluetun' && s.enabled);
+  const service = body.serviceId
+    ? gluetunServices.find((s) => s.id === body.serviceId)
+    : gluetunServices[0];
+  if (!service) return jsonResponse({ error: 'No enabled Gluetun services configured' }, 400);
+
+  try {
+    await fetchAndPersistGluetunStatus(service);
+    const latest = getLatestGluetunStatus(service.id);
     return jsonResponse({ ok: true, status: latest });
   } catch (err) {
     return jsonResponse({

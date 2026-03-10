@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 
 let db: Database.Database | null = null;
 const require = createRequire(import.meta.url);
+let gluetunServiceIdColumnPresent: boolean | null = null;
 
 function ensureDir(path: string): void {
   const dir = dirname(path);
@@ -25,6 +26,46 @@ export function getDb(): Database.Database {
 
 function initSchema(database: Database.Database): void {
   runMigrations(database);
+  ensureGluetunStatusServiceIdColumn(database);
+}
+
+function ensureGluetunStatusServiceIdColumn(database: Database.Database): void {
+  try {
+    const tableExists = database
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'gluetun_status'`)
+      .get() as { name: string } | undefined;
+    if (!tableExists) {
+      gluetunServiceIdColumnPresent = false;
+      return;
+    }
+
+    const cols = database.prepare(`PRAGMA table_info(gluetun_status)`).all() as { name: string }[];
+    const hasServiceId = cols.some((c) => c.name === 'service_id');
+    if (!hasServiceId) {
+      database.exec(`
+        ALTER TABLE gluetun_status ADD COLUMN service_id TEXT;
+        CREATE INDEX IF NOT EXISTS idx_gluetun_status_service_timestamp
+          ON gluetun_status(service_id, timestamp DESC);
+      `);
+      gluetunServiceIdColumnPresent = true;
+      return;
+    }
+    gluetunServiceIdColumnPresent = true;
+  } catch {
+    gluetunServiceIdColumnPresent = false;
+  }
+}
+
+function hasGluetunServiceIdColumn(): boolean {
+  if (gluetunServiceIdColumnPresent !== null) return gluetunServiceIdColumnPresent;
+  const database = getDb();
+  try {
+    const cols = database.prepare(`PRAGMA table_info(gluetun_status)`).all() as { name: string }[];
+    gluetunServiceIdColumnPresent = cols.some((c) => c.name === 'service_id');
+  } catch {
+    gluetunServiceIdColumnPresent = false;
+  }
+  return gluetunServiceIdColumnPresent;
 }
 
 type MigrationModule = {
@@ -250,6 +291,7 @@ export function getResults(limit = 100, sinceTimestamp?: number, agentId?: strin
 
 export interface GluetunStatusRow {
   id: number;
+  service_id: string | null;
   timestamp: number;
   public_ip: string | null;
   vpn_status: string;
@@ -261,6 +303,7 @@ export interface GluetunStatusRow {
 }
 
 export function insertGluetunStatus(row: {
+  service_id?: string | null;
   timestamp: number;
   public_ip: string | null;
   vpn_status: string;
@@ -270,6 +313,26 @@ export function insertGluetunStatus(row: {
   raw_publicip?: string | null;
   raw_openvpn_status?: string | null;
 }): void {
+  if (hasGluetunServiceIdColumn()) {
+    getDb()
+      .prepare(
+        `INSERT INTO gluetun_status (service_id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        row.service_id ?? null,
+        row.timestamp,
+        row.public_ip ?? null,
+        row.vpn_status,
+        row.city ?? null,
+        row.region ?? null,
+        row.country ?? null,
+        row.raw_publicip ?? null,
+        row.raw_openvpn_status ?? null
+      );
+    return;
+  }
+
   getDb()
     .prepare(
       `INSERT INTO gluetun_status (timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status)
@@ -287,23 +350,56 @@ export function insertGluetunStatus(row: {
     );
 }
 
-export function getLatestGluetunStatus(): GluetunStatusRow | null {
-  const row = getDb()
-    .prepare(
-      `SELECT id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status
-       FROM gluetun_status ORDER BY timestamp DESC LIMIT 1`
-    )
-    .get();
+export function getLatestGluetunStatus(serviceId?: string | null): GluetunStatusRow | null {
+  if (!hasGluetunServiceIdColumn()) {
+    const row = getDb()
+      .prepare(
+        `SELECT id, NULL AS service_id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status
+         FROM gluetun_status ORDER BY timestamp DESC LIMIT 1`
+      )
+      .get();
+    return (row as GluetunStatusRow | undefined) ?? null;
+  }
+
+  const row = serviceId
+    ? getDb()
+        .prepare(
+          `SELECT id, service_id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status
+           FROM gluetun_status WHERE service_id = ? ORDER BY timestamp DESC LIMIT 1`
+        )
+        .get(serviceId)
+    : getDb()
+        .prepare(
+          `SELECT id, service_id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status
+           FROM gluetun_status ORDER BY timestamp DESC LIMIT 1`
+        )
+        .get();
   return (row as GluetunStatusRow | undefined) ?? null;
 }
 
-export function getGluetunStatusHistory(limit: number): GluetunStatusRow[] {
-  return getDb()
-    .prepare(
-      `SELECT id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status
-       FROM gluetun_status ORDER BY timestamp DESC LIMIT ?`
-    )
-    .all(Math.max(1, Math.min(limit, 500))) as GluetunStatusRow[];
+export function getGluetunStatusHistory(limit: number, serviceId?: string | null): GluetunStatusRow[] {
+  if (!hasGluetunServiceIdColumn()) {
+    return getDb()
+      .prepare(
+        `SELECT id, NULL AS service_id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status
+         FROM gluetun_status ORDER BY timestamp DESC LIMIT ?`
+      )
+      .all(Math.max(1, Math.min(limit, 500))) as GluetunStatusRow[];
+  }
+
+  return (serviceId
+    ? getDb()
+        .prepare(
+          `SELECT id, service_id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status
+           FROM gluetun_status WHERE service_id = ? ORDER BY timestamp DESC LIMIT ?`
+        )
+        .all(serviceId, Math.max(1, Math.min(limit, 500)))
+    : getDb()
+        .prepare(
+          `SELECT id, service_id, timestamp, public_ip, vpn_status, city, region, country, raw_publicip, raw_openvpn_status
+           FROM gluetun_status ORDER BY timestamp DESC LIMIT ?`
+        )
+        .all(Math.max(1, Math.min(limit, 500)))) as GluetunStatusRow[];
 }
 
 export function pruneOldResults(retentionDays: number): number {

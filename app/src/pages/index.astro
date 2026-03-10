@@ -1,17 +1,20 @@
 ---
 export const prerender = false;
 import { getResults, getLatestResult, getAgents, getLatestGluetunStatus } from '../lib/db.js';
+import { getServices } from '../lib/config-file.js';
 import { startCron } from '../lib/cron.js';
-import { getGluetunConfig } from '../lib/config.js';
 
 startCron();
 const agentIdParam = Astro.url.searchParams.get('agent_id') ?? undefined;
 const agents = getAgents();
 const latest = getLatestResult(agentIdParam ?? undefined);
 const results = getResults(100, undefined, agentIdParam ?? undefined).reverse();
-const gluetunConfig = getGluetunConfig();
-const gluetunConfigured = !!gluetunConfig.address;
-const gluetunLatest = getLatestGluetunStatus();
+const gluetunServices = getServices().filter((service) => service.type === 'gluetun' && service.enabled);
+const gluetunOverview = gluetunServices.map((service) => ({
+  id: service.id,
+  name: service.name,
+  status: getLatestGluetunStatus(service.id),
+}));
 ---
 <!DOCTYPE html>
 <html lang="en">
@@ -20,7 +23,7 @@ const gluetunLatest = getLatestGluetunStatus();
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width" />
     <title>Speedarr – Dashboard</title>
-    <script is:inline define:vars={{ results: results, latest: latest, agents: agents }}>
+    <script is:inline define:vars={{ results, latest, agents }}>
       window.__SPEEDARR_DATA__ = { results, latest, agents: agents || [] };
     </script>
   </head>
@@ -29,7 +32,7 @@ const gluetunLatest = getLatestGluetunStatus();
       <header>
         <h1>Speedarr</h1>
         <nav>
-          <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/nodes">Nodes</a> · <a href="/settings">Settings</a>
+          <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/nodes">Nodes</a> · <a href="/services">Services</a> · <a href="/settings">Settings</a>
           <form method="post" action="/api/auth/logout" style="display:inline; margin-left: 1rem;">
             <button type="submit">Sign out</button>
           </form>
@@ -48,6 +51,7 @@ const gluetunLatest = getLatestGluetunStatus();
           </div>
           <button type="button" id="test-now-btn" class="btn-primary">Test now</button>
         </section>
+
         <section class="agents-section">
           <h2>Agents</h2>
           <ul class="agents-list">
@@ -60,33 +64,44 @@ const gluetunLatest = getLatestGluetunStatus();
             )}
           </ul>
         </section>
+
         <section class="gluetun-section">
           <div class="gluetun-header">
-            <h2>Gluetun (VPN)</h2>
-            <div class="gluetun-actions">
-              {(gluetunConfigured || gluetunLatest) && (
-                <button type="button" id="gluetun-update-status-btn" class="btn-primary btn-sm">Update status</button>
-              )}
-              <button type="button" id="gluetun-configure-btn" class="btn-secondary btn-sm">Configure Gluetun</button>
-            </div>
+            <h2>VPN Services</h2>
+            <a class="btn-secondary btn-sm" href="/services">Manage Services</a>
           </div>
-          {gluetunConfigured || gluetunLatest ? (
-            gluetunLatest ? (
-              <>
-                <p class="gluetun-status">Status: <span class="vpn-status {gluetunLatest.vpn_status === 'running' ? 'ok' : 'warn'}">{gluetunLatest.vpn_status}</span></p>
-                <p class="gluetun-ip">Public IP: <span id="gluetun-ip">{gluetunLatest.public_ip || '—'}</span></p>
-                {(gluetunLatest.city || gluetunLatest.region || gluetunLatest.country) && (
-                  <p class="gluetun-location">Location: {[gluetunLatest.city, gluetunLatest.region, gluetunLatest.country].filter(Boolean).join(', ') || '—'}</p>
-                )}
-                <p class="gluetun-time">Last check: <time id="gluetun-time">{new Date(gluetunLatest.timestamp).toLocaleString()}</time></p>
-              </>
-            ) : (
-              <p>Waiting for first Gluetun check. Use &quot;Update status&quot; or wait for the next poll.</p>
-            )
+          {gluetunOverview.length === 0 ? (
+            <p class="gluetun-empty">No enabled Gluetun services configured.</p>
           ) : (
-            <p class="gluetun-empty">No Gluetun connection configured. Configure to monitor VPN status and public IP.</p>
+            <table class="vpn-table">
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Status</th>
+                  <th>Public IP</th>
+                  <th>Last Check</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gluetunOverview.map((row) => (
+                  <tr>
+                    <td>{row.name}</td>
+                    <td>
+                      {row.status ? (
+                        <span class={`vpn-status ${row.status.vpn_status === 'running' ? 'ok' : 'warn'}`}>{row.status.vpn_status}</span>
+                      ) : (
+                        <span class="vpn-status">unknown</span>
+                      )}
+                    </td>
+                    <td>{row.status?.public_ip || '—'}</td>
+                    <td>{row.status ? new Date(row.status.timestamp).toLocaleString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </section>
+
         <section id="latest-section" class="latest">
           {latest ? (
             <>
@@ -100,15 +115,17 @@ const gluetunLatest = getLatestGluetunStatus();
           ) : (
             <>
               <h2>No results yet</h2>
-              <p>Speed tests run on a schedule, or click &quot;Test now&quot; to run one.</p>
+              <p>Speed tests run on a schedule, or click "Test now" to run one.</p>
             </>
           )}
         </section>
+
         <section class="chart-section">
           <h2>Speed over time</h2>
           <canvas id="chart" width="800" height="300"></canvas>
         </section>
       </main>
+
       <div id="test-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="modal-title">
         <div class="modal-backdrop"></div>
         <div class="modal-content">
@@ -120,39 +137,16 @@ const gluetunLatest = getLatestGluetunStatus();
           </div>
         </div>
       </div>
-      <div id="gluetun-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="gluetun-modal-title">
-        <div class="modal-backdrop" data-dismiss="gluetun"></div>
-        <div class="modal-content modal-content-form">
-          <h3 id="gluetun-modal-title">Configure Gluetun</h3>
-          <p class="modal-hint">Gluetun HTTP control server URL and optional API key. Test the connection before saving.</p>
-          <form id="gluetun-form">
-            <div class="form-row">
-              <label for="gluetun-address">Address</label>
-              <input type="url" id="gluetun-address" name="address" placeholder="http://gluetun:9999" required />
-            </div>
-            <div class="form-row">
-              <label for="gluetun-api-key">API key (optional)</label>
-              <input type="password" id="gluetun-api-key" name="apiKey" placeholder="Leave blank if not required" autocomplete="off" />
-            </div>
-            <div id="gluetun-test-msg" class="form-msg hidden" role="status"></div>
-            <div class="modal-actions">
-              <button type="button" id="gluetun-modal-cancel">Cancel</button>
-              <button type="button" id="gluetun-test-btn">Test</button>
-              <button type="submit" id="gluetun-save-btn" class="btn-primary" disabled>Save</button>
-            </div>
-          </form>
-        </div>
-      </div>
     </div>
+
     <script>
-      /* eslint-disable @typescript-eslint/no-explicit-any */
       import { Chart, registerables } from 'chart.js';
       Chart.register(...registerables);
 
-      const data = (window as unknown as { __SPEEDARR_DATA__: { results?: unknown[]; latest?: unknown; agents?: { agent_id: string; agent_name: string }[] } }).__SPEEDARR_DATA__;
-      let chartInstance: InstanceType<typeof Chart> | null = null;
+      const data = window.__SPEEDARR_DATA__;
+      let chartInstance = null;
 
-      function renderLatest(latest: unknown) {
+      function renderLatest(latest) {
         const downEl = document.getElementById('latest-download');
         const upEl = document.getElementById('latest-upload');
         const latEl = document.getElementById('latest-latency');
@@ -166,44 +160,37 @@ const gluetunLatest = getLatestGluetunStatus();
           if (ipEl) ipEl.textContent = '—';
           return;
         }
-        const l = latest as { download_mbps: number; upload_mbps: number; latency_ms?: number | null; timestamp: number; external_ip?: string | null };
-        if (downEl) downEl.textContent = l.download_mbps.toFixed(2);
-        if (upEl) upEl.textContent = l.upload_mbps.toFixed(2);
-        if (latEl) latEl.textContent = l.latency_ms != null ? `${l.latency_ms.toFixed(0)} ms` : '—';
-        if (timeEl) timeEl.textContent = new Date(l.timestamp).toLocaleString();
-        if (ipEl) ipEl.textContent = l.external_ip ?? 'unknown';
+        if (downEl) downEl.textContent = latest.download_mbps.toFixed(2);
+        if (upEl) upEl.textContent = latest.upload_mbps.toFixed(2);
+        if (latEl) latEl.textContent = latest.latency_ms != null ? `${latest.latency_ms.toFixed(0)} ms` : '—';
+        if (timeEl) timeEl.textContent = new Date(latest.timestamp).toLocaleString();
+        if (ipEl) ipEl.textContent = latest.external_ip ?? 'unknown';
       }
 
-      function renderChart(results: unknown[]) {
-        const canvas = document.getElementById('chart') as HTMLCanvasElement | null;
+      function renderChart(results) {
+        const canvas = document.getElementById('chart');
         const ctx = canvas?.getContext('2d');
         if (!ctx) return;
         if (chartInstance) chartInstance.destroy();
-        interface ResultPoint { timestamp: number; download_mbps: number; upload_mbps: number }
-        const res = results as ResultPoint[];
-        if (!res.length) return;
-        const labels = res.map((r: ResultPoint) => new Date(r.timestamp).toLocaleString());
+        if (!results.length) return;
+        const labels = results.map((r) => new Date(r.timestamp).toLocaleString());
         chartInstance = new Chart(ctx, {
           type: 'line',
           data: {
             labels,
             datasets: [
-              { label: 'Download (Mbps)', data: res.map((r: ResultPoint) => r.download_mbps), borderColor: '#4ade80', tension: 0.2, fill: true },
-              { label: 'Upload (Mbps)', data: res.map((r: ResultPoint) => r.upload_mbps), borderColor: '#60a5fa', tension: 0.2, fill: true },
+              { label: 'Download (Mbps)', data: results.map((r) => r.download_mbps), borderColor: '#4ade80', tension: 0.2, fill: true },
+              { label: 'Upload (Mbps)', data: results.map((r) => r.upload_mbps), borderColor: '#60a5fa', tension: 0.2, fill: true },
             ],
           },
           options: { responsive: true, scales: { y: { beginAtZero: true } } },
         });
       }
 
-      function applyData() {
-        renderLatest(data.latest);
-        renderChart(data.results ?? []);
-      }
+      renderLatest(data.latest);
+      renderChart(data.results ?? []);
 
-      applyData();
-
-      const agentFilter = document.getElementById('agent-filter') as HTMLSelectElement | null;
+      const agentFilter = document.getElementById('agent-filter');
       if (agentFilter && data.agents?.length) {
         const current = new URLSearchParams(window.location.search).get('agent_id') ?? '';
         agentFilter.value = current;
@@ -215,7 +202,7 @@ const gluetunLatest = getLatestGluetunStatus();
 
       const modal = document.getElementById('test-modal');
       const modalMessage = document.getElementById('modal-message');
-      const modalRun = document.getElementById('modal-run') as HTMLButtonElement | null;
+      const modalRun = document.getElementById('modal-run');
       const modalCancel = document.getElementById('modal-cancel');
       const testNowBtn = document.getElementById('test-now-btn');
 
@@ -241,7 +228,7 @@ const gluetunLatest = getLatestGluetunStatus();
       modalRun?.addEventListener('click', async () => {
         if (!modalRun || !modalMessage || modalRun.disabled) return;
         modalRun.disabled = true;
-        modalMessage.textContent = 'Running speed test…';
+        modalMessage.textContent = 'Running speed test...';
         try {
           const res = await fetch('/api/test-now', { method: 'POST', credentials: 'same-origin' });
           const json = await res.json();
@@ -251,7 +238,7 @@ const gluetunLatest = getLatestGluetunStatus();
             modalRun.textContent = 'Run';
             return;
           }
-          const r = json.result as { download_mbps: number; upload_mbps: number; latency_ms?: number | null; timestamp: number };
+          const r = json.result;
           modalMessage.textContent = `Done: ${r.download_mbps.toFixed(2)} Mbps down, ${r.upload_mbps.toFixed(2)} Mbps up, latency ${r.latency_ms != null ? r.latency_ms.toFixed(0) : 'n/a'} ms`;
           modalRun.textContent = 'Close';
           modalRun.disabled = false;
@@ -261,139 +248,13 @@ const gluetunLatest = getLatestGluetunStatus();
           renderLatest(data.latest);
           renderChart(data.results);
         } catch (err) {
-          if (modalMessage) modalMessage.textContent = 'Error: ' + (err instanceof Error ? err.message : String(err));
-          if (modalRun) { modalRun.disabled = false; modalRun.textContent = 'Run'; }
-        }
-      });
-
-      const gluetunModal = document.getElementById('gluetun-modal');
-      const gluetunUpdateStatusBtn = document.getElementById('gluetun-update-status-btn');
-      const gluetunConfigureBtn = document.getElementById('gluetun-configure-btn');
-      const gluetunForm = document.getElementById('gluetun-form');
-      const gluetunAddress = document.getElementById('gluetun-address') as HTMLInputElement | null;
-      const gluetunApiKey = document.getElementById('gluetun-api-key') as HTMLInputElement | null;
-      const gluetunTestMsg = document.getElementById('gluetun-test-msg');
-      const gluetunTestBtn = document.getElementById('gluetun-test-btn');
-      const gluetunSaveBtn = document.getElementById('gluetun-save-btn') as HTMLButtonElement | null;
-      const gluetunModalCancel = document.getElementById('gluetun-modal-cancel');
-      let gluetunTestPassed = false;
-
-      function showGluetunMsg(text: string, isOk: boolean) {
-        if (!gluetunTestMsg) return;
-        gluetunTestMsg.textContent = text;
-        gluetunTestMsg.classList.remove('hidden', 'ok', 'err');
-        gluetunTestMsg.classList.add(isOk ? 'ok' : 'err');
-      }
-
-      function openGluetunModal() {
-        gluetunTestPassed = false;
-        if (gluetunSaveBtn) gluetunSaveBtn.disabled = true;
-        if (gluetunTestMsg) gluetunTestMsg.classList.add('hidden');
-        fetch('/api/gluetun/config', { credentials: 'same-origin' })
-          .then((r) => r.json())
-          .then((c: { address?: string; hasApiKey?: boolean }) => {
-            if (gluetunAddress) gluetunAddress.value = c.address ?? '';
-            if (gluetunApiKey) gluetunApiKey.value = c.hasApiKey ? '********' : '';
-          })
-          .catch(() => { if (gluetunAddress) gluetunAddress.value = ''; if (gluetunApiKey) gluetunApiKey.value = ''; });
-        if (gluetunModal) {
-          gluetunModal.classList.remove('hidden');
-          gluetunModal.setAttribute('aria-hidden', 'false');
-        }
-      }
-
-      function closeGluetunModal() {
-        if (gluetunModal) {
-          gluetunModal.classList.add('hidden');
-          gluetunModal.setAttribute('aria-hidden', 'true');
-        }
-      }
-
-      gluetunUpdateStatusBtn?.addEventListener('click', async () => {
-        if ((gluetunUpdateStatusBtn as HTMLButtonElement).disabled) return;
-        (gluetunUpdateStatusBtn as HTMLButtonElement).disabled = true;
-        gluetunUpdateStatusBtn.textContent = 'Updating…';
-        try {
-          const res = await fetch('/api/gluetun/check', { method: 'POST', credentials: 'same-origin' });
-          const json = await res.json();
-          if (json.ok) window.location.reload();
-          else alert(json.error || 'Check failed');
-        } catch (err) {
-          alert(err instanceof Error ? err.message : 'Request failed');
-        } finally {
-          (gluetunUpdateStatusBtn as HTMLButtonElement).disabled = false;
-          gluetunUpdateStatusBtn.textContent = 'Update status';
-        }
-      });
-      gluetunConfigureBtn?.addEventListener('click', openGluetunModal);
-      gluetunModalCancel?.addEventListener('click', closeGluetunModal);
-      gluetunModal?.querySelector('.modal-backdrop[data-dismiss="gluetun"]')?.addEventListener('click', closeGluetunModal);
-
-      gluetunTestBtn?.addEventListener('click', async () => {
-        const address = gluetunAddress?.value?.trim().replace(/\/$/, '') ?? '';
-        const apiKey = (gluetunApiKey?.value ?? '') === '********' ? '' : (gluetunApiKey?.value ?? '');
-        if (!address) {
-          showGluetunMsg('Enter an address first.', false);
-          return;
-        }
-        gluetunTestBtn.textContent = 'Testing…';
-        (gluetunTestBtn as HTMLButtonElement).disabled = true;
-        try {
-          const res = await fetch('/api/gluetun/test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ address, apiKey }),
-          });
-          const json = await res.json();
-          if (json.ok) {
-            gluetunTestPassed = true;
-            if (gluetunSaveBtn) gluetunSaveBtn.disabled = false;
-            const loc = [json.city, json.region, json.country].filter(Boolean).join(', ');
-            showGluetunMsg(`Connected. VPN: ${json.status}, IP: ${json.public_ip || '—'}${loc ? ` (${loc})` : ''}`, true);
-          } else {
-            showGluetunMsg(json.error || 'Connection failed', false);
-          }
-        } catch (err) {
-          showGluetunMsg(err instanceof Error ? err.message : 'Request failed', false);
-        } finally {
-          gluetunTestBtn.textContent = 'Test';
-          (gluetunTestBtn as HTMLButtonElement).disabled = false;
-        }
-      });
-
-      gluetunForm?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (!gluetunTestPassed || !gluetunSaveBtn || gluetunSaveBtn.disabled) return;
-        const address = gluetunAddress?.value?.trim().replace(/\/$/, '') ?? '';
-        const apiKeyRaw = gluetunApiKey?.value ?? '';
-        const payload: { address: string; apiKey?: string } = { address };
-        if (apiKeyRaw !== '********') payload.apiKey = apiKeyRaw;
-        gluetunSaveBtn.disabled = true;
-        gluetunSaveBtn.textContent = 'Saving…';
-        try {
-          const res = await fetch('/api/gluetun/config', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(payload),
-          });
-          const json = await res.json();
-          if (!res.ok) {
-            showGluetunMsg(json.error || 'Save failed', false);
-            gluetunSaveBtn.disabled = false;
-          } else {
-            closeGluetunModal();
-            window.location.reload();
-          }
-        } catch (err) {
-          showGluetunMsg(err instanceof Error ? err.message : 'Request failed', false);
-          gluetunSaveBtn.disabled = false;
-        } finally {
-          gluetunSaveBtn.textContent = 'Save';
+          modalMessage.textContent = 'Error: ' + (err instanceof Error ? err.message : String(err));
+          modalRun.disabled = false;
+          modalRun.textContent = 'Run';
         }
       });
     </script>
+
     <style>
       * { box-sizing: border-box; }
       body { font-family: system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
@@ -410,46 +271,33 @@ const gluetunLatest = getLatestGluetunStatus();
       .filter-row select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 0.35rem 0.75rem; border-radius: 4px; }
       .btn-primary { background: #16a34a; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: 500; }
       .btn-primary:hover { background: #15803d; }
-      .agents-section { background: #1e293b; padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; }
-      .agents-section h2 { margin: 0 0 0.5rem 0; font-size: 1rem; color: #94a3b8; }
+      .btn-secondary { background: #334155; color: #e2e8f0; border: none; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; text-decoration: none; }
+      .btn-secondary:hover { background: #475569; }
+      .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
+      .agents-section, .gluetun-section { background: #1e293b; padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; }
+      .agents-section h2, .gluetun-section h2 { margin: 0 0 0.5rem 0; font-size: 1rem; color: #94a3b8; }
       .agents-list { margin: 0; padding-left: 1.25rem; }
       .agents-list a { color: #60a5fa; }
       .agents-list .agent-id { color: #64748b; font-size: 0.85rem; }
+      .gluetun-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+      .gluetun-empty { color: #94a3b8; }
+      .vpn-table { width: 100%; border-collapse: collapse; }
+      .vpn-table th, .vpn-table td { text-align: left; padding: 0.45rem 0.3rem; border-bottom: 1px solid #334155; font-size: 0.9rem; }
+      .vpn-status.ok { color: #22c55e; }
+      .vpn-status.warn { color: #fbbf24; }
       .latest { background: #1e293b; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; }
       .latest h2 { margin-top: 0; font-size: 1.1rem; color: #94a3b8; }
       .stat { font-size: 1.5rem; font-weight: 600; margin: 0.5rem 0; }
       .stat span { font-size: 0.9rem; font-weight: 400; color: #94a3b8; margin-left: 0.25rem; }
       .time { font-size: 0.85rem; color: #64748b; margin-top: 0.5rem; }
-      .gluetun-section { background: #1e293b; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; }
-      .gluetun-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
-      .gluetun-header h2 { margin: 0; font-size: 1.1rem; color: #94a3b8; }
-      .gluetun-actions { display: flex; align-items: center; gap: 0.5rem; }
-      .gluetun-section p { margin: 0.35rem 0; }
-      .gluetun-empty { color: #94a3b8; }
-      .btn-secondary { background: #334155; color: #e2e8f0; border: none; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
-      .btn-secondary:hover { background: #475569; }
-      .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
-      .vpn-status.ok { color: #22c55e; }
-      .vpn-status.warn { color: #eab308; }
       .chart-section { background: #1e293b; padding: 1.5rem; border-radius: 8px; }
       .chart-section h2 { margin-top: 0; font-size: 1.1rem; color: #94a3b8; }
-      .banner { padding: 0.75rem 1rem; background: #334155; border-radius: 4px; margin-top: 1rem; }
-      .banner.hidden { display: none; }
       .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 1rem; }
       .modal.hidden { display: none; }
       .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.6); }
       .modal-content { position: relative; background: #1e293b; padding: 1.5rem; border-radius: 8px; max-width: 400px; width: 100%; border: 1px solid #334155; }
       .modal-content h3 { margin: 0 0 0.5rem 0; font-size: 1.1rem; }
       .modal-content p { margin: 0 0 1rem 0; color: #94a3b8; }
-      .modal-content-form { max-width: 420px; }
-      .modal-hint { font-size: 0.85rem; margin-bottom: 1rem; }
-      .form-row { margin-bottom: 0.75rem; }
-      .form-row label { display: block; margin-bottom: 0.25rem; color: #94a3b8; font-size: 0.9rem; }
-      .form-row input { width: 100%; background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.4rem 0.6rem; border-radius: 4px; box-sizing: border-box; }
-      .form-msg { font-size: 0.9rem; margin-bottom: 0.75rem; padding: 0.5rem; border-radius: 4px; }
-      .form-msg.ok { background: #14532d; color: #86efac; }
-      .form-msg.err { background: #7f1d1d; color: #fca5a5; }
-      .form-msg.hidden { display: none; }
       .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
       .modal-actions button { background: #334155; color: #e2e8f0; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
       .modal-actions button:hover { background: #475569; }

@@ -1,12 +1,11 @@
 ---
 export const prerender = false;
-import { getEffectiveConfig, getGluetunPollingConfig, getAgentIdentity } from '../lib/config.js';
+import { getEffectiveConfig, getAgentIdentity } from '../lib/config.js';
 import { getSetting } from '../lib/config-file.js';
 import { startCron } from '../lib/cron.js';
 
 startCron();
 const config = getEffectiveConfig();
-const gluetunPolling = getGluetunPollingConfig();
 const { agentId, agentName } = getAgentIdentity();
 const apiKey = getSetting('SPEEDARR_API_KEY') ?? '';
 ---
@@ -32,10 +31,15 @@ const apiKey = getSetting('SPEEDARR_API_KEY') ?? '';
       .form-section-desc { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem; }
       .form-row { margin-bottom: 0.75rem; }
       .form-row label { display: block; margin-bottom: 0.25rem; color: #94a3b8; }
-      .form-row input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.4rem 0.6rem; border-radius: 4px; width: 100%; }
+      .form-row input[type="text"], .form-row input[type="password"], .form-row input[type="number"] { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.4rem 0.6rem; border-radius: 4px; width: 100%; }
+      .form-row input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
       .form-row .hint { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
       button.btn { background: #3b82f6; color: #fff; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; }
       button.btn:hover { background: #2563eb; }
+      button.btn-sm { background: #334155; color: #e2e8f0; border: none; padding: 0.25rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+      button.btn-sm:hover { background: #475569; }
+      button.btn-danger { background: #7f1d1d; color: #fca5a5; border: none; padding: 0.25rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+      button.btn-danger:hover { background: #991b1b; }
       .msg { padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
       .msg.err { background: #7f1d1d; color: #fca5a5; }
       .msg.ok { background: #14532d; color: #86efac; }
@@ -46,7 +50,7 @@ const apiKey = getSetting('SPEEDARR_API_KEY') ?? '';
     <header>
       <h1>Speedarr</h1>
       <nav>
-        <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/nodes">Nodes</a> · <a href="/settings">Settings</a>
+        <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/nodes">Nodes</a> · <a href="/services">Services</a> · <a href="/settings">Settings</a>
         <form method="post" action="/api/auth/logout" style="display:inline; margin-left: 1rem;">
           <button type="submit">Sign out</button>
         </form>
@@ -61,7 +65,7 @@ const apiKey = getSetting('SPEEDARR_API_KEY') ?? '';
         <div class="form-row">
           <label for="api-key">API key</label>
           <input type="password" id="api-key" name="apiKey" value={apiKey} placeholder="This server's key for API access" autocomplete="off" />
-          <p class="hint">This instance’s key. Used when something calls this server’s API without a login (e.g. <code>/api/results</code>, <code>/api/config</code>) or when you add this server as a node on another dashboard. Leave empty to disable key-based API access.</p>
+          <p class="hint">This instance's key. Used when something calls this server's API without a login (e.g. <code>/api/results</code>, <code>/api/config</code>) or when you add this server as a node on another dashboard. Leave empty to disable key-based API access.</p>
         </div>
         <div class="form-row">
           <label for="agent-id">Agent ID</label>
@@ -90,23 +94,17 @@ const apiKey = getSetting('SPEEDARR_API_KEY') ?? '';
         </div>
         <button type="submit" class="btn">Save</button>
       </form>
-      <form id="gluetun-polling-form" class="form-section">
-        <h3>Gluetun polling</h3>
-        <p class="form-section-desc">How often to check Gluetun (VPN status and public IP). Independent of speed test schedule.</p>
-        <div class="form-row">
-          <label for="gluetun-interval-minutes">Interval (minutes)</label>
-          <input type="number" id="gluetun-interval-minutes" name="gluetunIntervalMinutes" min="1" max="525600" value={gluetunPolling.intervalMinutes} />
-          <p class="hint">Default 5 minutes.</p>
-        </div>
-        <button type="submit" class="btn">Save</button>
-      </form>
+
     </main>
     <script>
-      const msgEl = document.getElementById('msg');
-      function showMsg(text, isErr) {
+      const msgEl = document.getElementById('msg')!;
+      function showMsg(text: string, isErr: boolean) {
         msgEl.classList.remove('hidden');
         msgEl.textContent = text;
         msgEl.className = 'msg ' + (isErr ? 'err' : 'ok');
+      }
+      function val(id: string): string {
+        return (document.getElementById(id) as HTMLInputElement).value;
       }
       document.getElementById('general-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -115,22 +113,22 @@ const apiKey = getSetting('SPEEDARR_API_KEY') ?? '';
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              SPEEDARR_API_KEY: document.getElementById('api-key').value,
-              SPEEDARR_AGENT_ID: document.getElementById('agent-id').value.trim() || 'local',
-              SPEEDARR_AGENT_NAME: document.getElementById('agent-name').value.trim() || 'Local',
+              SPEEDARR_API_KEY: val('api-key'),
+              SPEEDARR_AGENT_ID: val('agent-id').trim() || 'local',
+              SPEEDARR_AGENT_NAME: val('agent-name').trim() || 'Local',
             }),
           });
           const data = await r.json();
           if (!r.ok) showMsg(data.error || 'Failed to save', true);
           else showMsg('General settings saved.', false);
         } catch (err) {
-          showMsg(err.message || 'Request failed', true);
+          showMsg((err as Error).message || 'Request failed', true);
         }
       });
       document.getElementById('settings-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const intervalMinutes = parseInt(document.getElementById('interval-minutes').value, 10) || 0;
-        const retentionDays = parseInt(document.getElementById('retention-days').value, 10) || 0;
+        const intervalMinutes = parseInt(val('interval-minutes'), 10) || 0;
+        const retentionDays = parseInt(val('retention-days'), 10) || 0;
         try {
           const r = await fetch('/api/settings', {
             method: 'PATCH',
@@ -144,25 +142,7 @@ const apiKey = getSetting('SPEEDARR_API_KEY') ?? '';
           if (!r.ok) showMsg(data.error || 'Failed to save', true);
           else showMsg('Settings saved.', false);
         } catch (err) {
-          showMsg(err.message || 'Request failed', true);
-        }
-      });
-      document.getElementById('gluetun-polling-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const gluetunIntervalMinutes = parseInt(document.getElementById('gluetun-interval-minutes').value, 10) || 5;
-        try {
-          const r = await fetch('/api/settings', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              SPEEDARR_GLUETUN_INTERVAL_MINUTES: String(Math.max(1, gluetunIntervalMinutes)),
-            }),
-          });
-          const data = await r.json();
-          if (!r.ok) showMsg(data.error || 'Failed to save', true);
-          else showMsg('Gluetun polling settings saved.', false);
-        } catch (err) {
-          showMsg(err.message || 'Request failed', true);
+          showMsg((err as Error).message || 'Request failed', true);
         }
       });
     </script>
