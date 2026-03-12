@@ -1,0 +1,360 @@
+---
+export const prerender = false;
+import { getLatestResult, getNodeById } from '../../../lib/db.js';
+import { startCron } from '../../../lib/cron.js';
+import { getAgentIdentity, getEffectiveConfig } from '../../../lib/config.js';
+import { getSetting } from '../../../lib/config-file.js';
+
+startCron();
+
+const { id } = Astro.params;
+const { agentId: localAgentId, agentName: localAgentName } = getAgentIdentity();
+const isLocal = !!id && id === localAgentId;
+const remoteNode = id ? getNodeById(id) : null;
+if (!remoteNode && !isLocal) return Astro.redirect('/services');
+const node = remoteNode ?? {
+  id: localAgentId,
+  name: localAgentName,
+  base_url: '',
+  api_key: getSetting('SPEEDARR_API_KEY') ?? '',
+  blocked: 0,
+};
+const latest = getLatestResult(node.id);
+const localEffectiveIntervalMinutes = getEffectiveConfig().intervalMinutes;
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{node.name} – Node Settings</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+      header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2rem; background: #1e293b; border-bottom: 1px solid #334155; }
+      header h1 { margin: 0; font-size: 1.25rem; }
+      nav a { color: #94a3b8; text-decoration: none; margin-right: 0.5rem; }
+      nav a:hover { color: #fff; }
+      nav button { background: #334155; color: #94a3b8; border: none; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+      nav button:hover { background: #475569; color: #fff; }
+      main { padding: 2rem; max-width: 760px; margin: 0 auto; }
+      .page-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+      .page-header h2 { margin: 0; }
+      .back-link { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
+      .back-link:hover { color: #fff; }
+      .type-pill { font-size: 0.75rem; text-transform: uppercase; padding: 0.15rem 0.45rem; border-radius: 4px; background: #14532d; color: #bbf7d0; }
+      .form-section { background: #1e293b; padding: 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; }
+      .form-section h3 { margin-top: 0; }
+      .form-section-desc { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem; }
+      .form-row { margin-bottom: 0.75rem; }
+      .form-row label { display: block; margin-bottom: 0.25rem; color: #94a3b8; }
+      .form-row input[type="text"], .form-row input[type="password"], .form-row input[type="number"] { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.4rem 0.6rem; border-radius: 4px; width: 100%; }
+      .form-row input[type="checkbox"] { margin-right: 0.4rem; }
+      .form-row .hint { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
+      button.btn { background: #3b82f6; color: #fff; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; }
+      button.btn:hover { background: #2563eb; }
+      button.btn-sm { background: #334155; color: #e2e8f0; border: none; padding: 0.25rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+      button.btn-sm:hover { background: #475569; }
+      button.btn-danger { background: transparent; color: #fca5a5; border: 1px solid #7f1d1d; padding: 0.35rem 0.7rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+      button.btn-danger:hover { background: #7f1d1d; color: #fff; }
+      button.btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+      .msg { padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+      .msg.err { background: #7f1d1d; color: #fca5a5; }
+      .msg.ok { background: #14532d; color: #86efac; }
+      .msg.hidden { display: none; }
+      .test-result { font-size: 0.85rem; margin-top: 0.4rem; color: #94a3b8; }
+      .danger-zone { border: 1px solid #7f1d1d; background: #2a1120; }
+      .danger-zone h3 { color: #fca5a5; }
+      .danger-zone .form-section-desc { color: #fecaca; }
+      .danger-zone code { background: #450a0a; color: #fecaca; padding: 0.05rem 0.3rem; border-radius: 4px; }
+      .hint-list { margin: 0; color: #94a3b8; font-size: 0.9rem; }
+      @media (max-width: 700px) { main { padding: 1rem; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Speedarr</h1>
+      <nav>
+        <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/services">Services</a> · <a href="/settings">Settings</a>
+        <form method="post" action="/api/auth/logout" style="display:inline; margin-left: 1rem;">
+          <button type="submit">Sign out</button>
+        </form>
+      </nav>
+    </header>
+    <main>
+      <div class="page-header">
+        <a href="/services" class="back-link">← Services</a>
+        <h2>{node.name}</h2>
+        <span class="type-pill">node</span>
+      </div>
+      <div id="msg" class="msg hidden" role="status"></div>
+
+      <form id="node-form" class="form-section">
+        <h3>Node Details</h3>
+        <div class="form-row">
+          <label for="node-id">Node ID</label>
+          <input type="text" id="node-id" value={node.id} readonly />
+        </div>
+        <div class="form-row">
+          <label for="node-name">Display name</label>
+          <input type="text" id="node-name" value={node.name} />
+        </div>
+        <div class="form-row">
+          <label for="node-url">Node URL</label>
+          <input type="text" id="node-url" value={isLocal ? 'This server' : node.base_url} readonly={isLocal} />
+        </div>
+        <div class="form-row">
+          <label for="node-api-key">Node API key</label>
+          <input
+            type="password"
+            id="node-api-key"
+            placeholder="Node SPEEDARR_API_KEY"
+            autocomplete="off"
+            value={node.api_key ? '••••••••' : ''}
+            data-has-key={node.api_key ? 'true' : 'false'}
+          />
+          <p class="hint">Focus and leave blank to clear the stored key.</p>
+        </div>
+        {!isLocal && (
+          <div class="form-row">
+            <label>
+              <input type="checkbox" id="node-blocked" checked={node.blocked === 1} />
+              Block node from remote actions
+            </label>
+          </div>
+        )}
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <button type="submit" class="btn">Save</button>
+          <button type="button" id="test-btn" class="btn-sm">Test now</button>
+        </div>
+        <p id="test-result" class="test-result">Latest result: {latest ? `${latest.download_mbps.toFixed(2)} Mbps down, ${latest.upload_mbps.toFixed(2)} Mbps up` : 'n/a'}</p>
+      </form>
+
+      <section class="form-section">
+        <h3>Node Schedule</h3>
+        <p class="form-section-desc">Load or update this node’s own speed test interval{isLocal ? '' : ' remotely'}.</p>
+        <div class="form-row">
+          <label for="node-interval">Speed test interval (minutes)</label>
+          <input type="number" id="node-interval" min={isLocal ? '0' : '1'} max="1440" value={isLocal ? String(localEffectiveIntervalMinutes) : '360'} />
+          {isLocal && <p class="hint">Set to 0 to use the default 6-hour schedule.</p>}
+        </div>
+        <div class="form-row">
+          <label>Reporting endpoints</label>
+          <p id="reporting-list" class="hint-list">{isLocal ? 'Local dashboard instance.' : 'Load to view configured report endpoints.'}</p>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <button type="button" id="load-config-btn" class="btn-sm">Load config</button>
+          <button type="button" id="save-config-btn" class="btn">Save interval</button>
+        </div>
+      </section>
+
+      {!isLocal && (
+        <section class="form-section danger-zone">
+          <h3>Danger Zone</h3>
+          <p class="form-section-desc">Delete this node permanently. This action cannot be undone.</p>
+          <div class="form-row">
+            <label for="delete-confirm-name">
+              Type <code>{node.name}</code> to confirm deletion
+            </label>
+            <input
+              type="text"
+              id="delete-confirm-name"
+              autocomplete="off"
+              placeholder={node.name}
+            />
+            <p class="hint">The name must match exactly.</p>
+          </div>
+          <button type="button" id="delete-node-btn" class="btn-danger" disabled>Delete node</button>
+        </section>
+      )}
+    </main>
+
+    <script define:vars={{ nodeId: node.id, nodeName: node.name, isLocal, localEffectiveIntervalMinutes }}>
+      const msgEl = document.getElementById('msg');
+      function showMsg(text, isErr) {
+        msgEl.classList.remove('hidden');
+        msgEl.textContent = text;
+        msgEl.className = 'msg ' + (isErr ? 'err' : 'ok');
+      }
+
+      const apiKeyInput = document.getElementById('node-api-key');
+      apiKeyInput?.addEventListener('focus', () => {
+        if (apiKeyInput.dataset.hasKey === 'true') {
+          apiKeyInput.value = '';
+          apiKeyInput.dataset.hasKey = 'false';
+        }
+      });
+
+      document.getElementById('node-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('node-name').value.trim();
+        const baseUrl = document.getElementById('node-url').value.trim().replace(/\/$/, '');
+        const body = isLocal
+          ? { SPEEDARR_AGENT_NAME: name || 'Local' }
+          : {
+            name,
+            base_url: baseUrl,
+            blocked: !!document.getElementById('node-blocked').checked,
+          };
+        if (apiKeyInput.dataset.hasKey !== 'true') {
+          if (isLocal) {
+            body.SPEEDARR_API_KEY = apiKeyInput.value;
+          } else {
+            body.api_key = apiKeyInput.value;
+          }
+        }
+        try {
+          const r = isLocal
+            ? await fetch('/api/settings', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            })
+            : await fetch('/api/nodes/' + encodeURIComponent(nodeId), {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+          const data = await r.json();
+          if (!r.ok) {
+            showMsg(data.error || 'Failed to save', true);
+            return;
+          }
+          showMsg('Node settings saved.', false);
+          if (body.api_key !== undefined) {
+            apiKeyInput.dataset.hasKey = body.api_key ? 'true' : 'false';
+            apiKeyInput.value = body.api_key ? '••••••••' : '';
+          }
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+        }
+      });
+
+      document.getElementById('test-btn')?.addEventListener('click', async () => {
+        const resultEl = document.getElementById('test-result');
+        resultEl.textContent = 'Running test...';
+        try {
+          const r = isLocal
+            ? await fetch('/api/test-now', { method: 'POST' })
+            : await fetch('/api/nodes/' + encodeURIComponent(nodeId) + '/test', { method: 'POST' });
+          const data = await r.json();
+          if (!r.ok) {
+            resultEl.textContent = 'Failed: ' + (data.error || 'Unknown error');
+            return;
+          }
+          const result = data.result || {};
+          resultEl.textContent = `${(result.download_mbps ?? 0).toFixed(2)} Mbps down, ${(result.upload_mbps ?? 0).toFixed(2)} Mbps up`;
+          showMsg('Node test completed.', false);
+        } catch (err) {
+          resultEl.textContent = 'Error: ' + (err.message || 'Request failed');
+        }
+      });
+
+      const intervalInput = document.getElementById('node-interval');
+      const reportingList = document.getElementById('reporting-list');
+      const loadConfigBtn = document.getElementById('load-config-btn');
+      const saveConfigBtn = document.getElementById('save-config-btn');
+
+      loadConfigBtn?.addEventListener('click', async () => {
+        loadConfigBtn.disabled = true;
+        try {
+          const r = isLocal
+            ? await fetch('/api/settings', { credentials: 'same-origin' })
+            : await fetch('/api/nodes/' + encodeURIComponent(nodeId) + '/config', { credentials: 'same-origin' });
+          const data = await r.json();
+          if (!r.ok) {
+            showMsg(data.error || 'Failed to load node config', true);
+            return;
+          }
+          if (isLocal) {
+            intervalInput.value = String(data.effective?.intervalMinutes ?? localEffectiveIntervalMinutes ?? 0);
+            reportingList.textContent = 'Local dashboard instance.';
+          } else {
+            intervalInput.value = String(data.intervalMinutes ?? 360);
+            const endpoints = Array.isArray(data.reportEndpoints) ? data.reportEndpoints : [];
+            reportingList.textContent = endpoints.length > 0
+              ? endpoints.map((endpoint) => endpoint.url + ' [' + endpoint.nodeId + ']').join(', ')
+              : 'None';
+          }
+          showMsg('Node config loaded.', false);
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+        } finally {
+          loadConfigBtn.disabled = false;
+        }
+      });
+
+      saveConfigBtn?.addEventListener('click', async () => {
+        const intervalMinutes = parseInt(intervalInput.value, 10);
+        if (isLocal && (!Number.isFinite(intervalMinutes) || intervalMinutes < 0 || intervalMinutes > 1440)) {
+          showMsg('Speed test interval must be between 0 and 1440 minutes.', true);
+          return;
+        }
+        if (!isLocal && (!Number.isFinite(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 1440)) {
+          showMsg('Speed test interval must be between 1 and 1440 minutes.', true);
+          return;
+        }
+        saveConfigBtn.disabled = true;
+        try {
+          const r = isLocal
+            ? await fetch('/api/settings', {
+              method: 'PATCH',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ SPEEDARR_INTERVAL_MINUTES: String(intervalMinutes) }),
+            })
+            : await fetch('/api/nodes/' + encodeURIComponent(nodeId) + '/config', {
+              method: 'PATCH',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ intervalMinutes }),
+            });
+          const data = await r.json();
+          if (!r.ok) {
+            showMsg(data.error || 'Failed to save node config', true);
+            return;
+          }
+          showMsg('Node interval saved.', false);
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+        } finally {
+          saveConfigBtn.disabled = false;
+        }
+      });
+
+      const deleteConfirmInput = document.getElementById('delete-confirm-name');
+      const deleteNodeBtn = document.getElementById('delete-node-btn');
+
+      function deleteConfirmMatches() {
+        return (deleteConfirmInput?.value || '').trim() === nodeName;
+      }
+
+      deleteConfirmInput?.addEventListener('input', () => {
+        if (!deleteNodeBtn) return;
+        deleteNodeBtn.disabled = !deleteConfirmMatches();
+      });
+
+      deleteNodeBtn?.addEventListener('click', async () => {
+        if (!deleteConfirmMatches()) {
+          showMsg('Type the exact node name to confirm deletion.', true);
+          return;
+        }
+        deleteNodeBtn.disabled = true;
+        try {
+          const r = await fetch('/api/nodes/' + encodeURIComponent(nodeId), { method: 'DELETE' });
+          if (!r.ok) {
+            const data = await r.json();
+            showMsg(data.error || 'Failed to delete node', true);
+            deleteNodeBtn.disabled = false;
+            return;
+          }
+          window.location.href = '/services';
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+          deleteNodeBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

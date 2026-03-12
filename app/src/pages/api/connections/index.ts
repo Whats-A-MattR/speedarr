@@ -22,12 +22,13 @@ function jsonResponse(body: object, status = 200) {
 
 export const GET: APIRoute = async ({ request }) => {
   if (!hasSession(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
-  return jsonResponse({ connections: getConnections() });
+  const networkGroups = getConnections();
+  return jsonResponse({ connections: networkGroups, networkGroups });
 };
 
 export const POST: APIRoute = async ({ request }) => {
   if (!hasSession(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
-  let body: { id?: string; name?: string };
+  let body: { id?: string; name?: string; nodeIds?: string[] };
   try {
     body = await request.json();
   } catch {
@@ -36,14 +37,19 @@ export const POST: APIRoute = async ({ request }) => {
 
   const id = typeof body.id === 'string' ? body.id.trim() : '';
   const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!id) return jsonResponse({ error: 'Connection ID is required' }, 400);
+  if (!id) return jsonResponse({ error: 'Network group ID is required' }, 400);
   if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
-    return jsonResponse({ error: 'Connection ID may only contain letters, numbers, dot, underscore, and dash' }, 400);
+    return jsonResponse({ error: 'Network group ID may only contain letters, numbers, dot, underscore, and dash' }, 400);
   }
   if (getConnections().some((conn) => conn.id === id)) {
-    return jsonResponse({ error: 'Connection ID already exists' }, 409);
+    return jsonResponse({ error: 'Network group ID already exists' }, 409);
   }
 
-  upsertConnection({ id, name: name || id });
-  return jsonResponse({ connection: { id, name: name || id } }, 201);
+  const nodeIds = Array.isArray(body.nodeIds)
+    ? [...new Set(body.nodeIds.filter((nodeId): nodeId is string => typeof nodeId === 'string').map((nodeId) => nodeId.trim()).filter(Boolean))]
+    : [];
+
+  upsertConnection({ id, name: name || id, nodeIds });
+  const networkGroup = { id, name: name || id, nodeIds };
+  return jsonResponse({ connection: networkGroup, networkGroup }, 201);
 };

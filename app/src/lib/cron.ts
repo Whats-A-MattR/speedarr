@@ -1,7 +1,7 @@
 import { runAndPersistSpeedtest } from './speedtest.js';
 import { getLatestGluetunStatus, getLatestResult, pruneOldResults } from './db.js';
-import { getEffectiveConfig } from './config.js';
-import { getServices, type ServiceConfig } from './config-file.js';
+import { getEffectiveConfig, getAgentIdentity } from './config.js';
+import { getConnections, getServices, type ServiceConfig } from './config-file.js';
 import { fetchAndPersistGluetunStatus } from './gluetun.js';
 import { log as logger, error as logError } from './logger.js';
 import {
@@ -16,18 +16,42 @@ import {
 } from './sabnzbd.js';
 
 const MS_PER_MINUTE = 60 * 1000;
-let started = false;
-let speedTestTimer: ReturnType<typeof setInterval> | null = null;
-let gluetunTimer: ReturnType<typeof setInterval> | null = null;
-let scheduleTimer: ReturnType<typeof setInterval> | null = null;
-let speedCycleRunning = false;
+type CronState = {
+  started: boolean;
+  speedTestTimer: ReturnType<typeof setInterval> | null;
+  gluetunTimer: ReturnType<typeof setInterval> | null;
+  scheduleTimer: ReturnType<typeof setInterval> | null;
+  speedCycleRunning: boolean;
+  // Per-service VPN kill switch state (keyed by service id)
+  vpnPausedServices: Set<string>;
+  serviceLimitState: Map<string, string>;
+  connectionSpeedBaselineById: Map<string, number | null>;
+  lastVpnStatusByService: Map<string, string | null>;
+  lastGluetunPollAt: Map<string, number>;
+};
 
-// Per-service VPN kill switch state (keyed by service id)
-const vpnPausedServices = new Set<string>();
-const serviceLimitState = new Map<string, string>();
-const connectionSpeedBaselineById = new Map<string, number>();
-const lastVpnStatusByService = new Map<string, string | null>();
-const lastGluetunPollAt = new Map<string, number>();
+const CRON_STATE_KEY = '__speedarrCronStateV1__';
+
+function getCronState(): CronState {
+  const g = globalThis as typeof globalThis & { [CRON_STATE_KEY]?: CronState };
+  if (!g[CRON_STATE_KEY]) {
+    g[CRON_STATE_KEY] = {
+      started: false,
+      speedTestTimer: null,
+      gluetunTimer: null,
+      scheduleTimer: null,
+      speedCycleRunning: false,
+      vpnPausedServices: new Set<string>(),
+      serviceLimitState: new Map<string, string>(),
+      connectionSpeedBaselineById: new Map<string, number | null>(),
+      lastVpnStatusByService: new Map<string, string | null>(),
+      lastGluetunPollAt: new Map<string, number>(),
+    };
+  }
+  return g[CRON_STATE_KEY]!;
+}
+
+const state = getCronState();
 
 function getSpeedTestIntervalMinutes(): number {
   const config = getEffectiveConfig();
@@ -110,19 +134,19 @@ async function applyRateLimitForService(
   let effectiveDownloadMbps = downloadMbps;
   if (service.speedtestLimitEnabled) {
     const connectionId = getServiceConnectionId(service);
-    if (connectionSpeedBaselineById.has(connectionId)) {
-      effectiveDownloadMbps = connectionSpeedBaselineById.get(connectionId) ?? downloadMbps;
+    if (state.connectionSpeedBaselineById.has(connectionId)) {
+      effectiveDownloadMbps = state.connectionSpeedBaselineById.get(connectionId) ?? null;
     }
   }
 
   const desired = getDesiredRateLimitAction(service, effectiveDownloadMbps, now);
-  const previous = serviceLimitState.get(service.id) ?? null;
+  const previous = state.serviceLimitState.get(service.id) ?? null;
   if (previous === desired.summary) return;
 
   if (desired.kind === 'bandwidth_percent') {
     const ok = await setSabnzbdBandwidthPercent(service.url, service.apiKey, desired.percent);
     if (!ok) return;
-    serviceLimitState.set(service.id, desired.summary);
+    state.serviceLimitState.set(service.id, desired.summary);
     if (desired.percent === 0) {
       logger(`[speedarr] ${service.name}: schedule set bandwidth to unlimited`);
     } else {
@@ -134,7 +158,7 @@ async function applyRateLimitForService(
   if (desired.kind === 'absolute_kbs') {
     const ok = await setSabnzbdSpeedLimitKbs(service.url, service.apiKey, desired.kbs);
     if (!ok) return;
-    serviceLimitState.set(service.id, desired.summary);
+    state.serviceLimitState.set(service.id, desired.summary);
     logger(`[speedarr] ${service.name}: speed test limit → ${desired.kbs} KB/s`);
     return;
   }
@@ -144,7 +168,7 @@ async function applyRateLimitForService(
     if (!ok) return;
     logger(`[speedarr] ${service.name}: cleared managed bandwidth limits`);
   }
-  serviceLimitState.delete(service.id);
+  state.serviceLimitState.delete(service.id);
 }
 
 async function checkVpnProtectionForService(
@@ -156,18 +180,18 @@ async function checkVpnProtectionForService(
   if (service.type !== 'sabnzbd') return; // only SABnzbd supported for now
   if (!service.killSwitchEnabled || !service.url || !service.apiKey) return;
 
-  const pausedByUs = vpnPausedServices.has(service.id);
+  const pausedByUs = state.vpnPausedServices.has(service.id);
 
   if (!vpnUp && (wasUp || !hasPreviousStatus) && !pausedByUs) {
     const ok = await pauseSabnzbd(service.url, service.apiKey);
     if (ok) {
-      vpnPausedServices.add(service.id);
+      state.vpnPausedServices.add(service.id);
       logger(`[speedarr] ${service.name}: kill switch — downloads paused`);
     }
   } else if (vpnUp && !wasUp && pausedByUs) {
     const ok = await resumeSabnzbd(service.url, service.apiKey);
     if (ok) {
-      vpnPausedServices.delete(service.id);
+      state.vpnPausedServices.delete(service.id);
       logger(`[speedarr] ${service.name}: VPN reconnected — downloads resumed`);
     }
   }
@@ -213,7 +237,7 @@ async function runVpnProtectionCheck(): Promise<void> {
     if (!vpnServiceId) continue;
     const vpnStatus = getLatestGluetunStatus(vpnServiceId);
     if (!vpnStatus) continue;
-    const previous = lastVpnStatusByService.get(vpnServiceId);
+    const previous = state.lastVpnStatusByService.get(vpnServiceId);
     const vpnUp = vpnStatus.vpn_status === 'running';
     const wasUp = previous === 'running';
     try {
@@ -221,7 +245,7 @@ async function runVpnProtectionCheck(): Promise<void> {
     } catch (err) {
       logError(`[speedarr] Kill switch check failed for ${service.name}:`, (err as Error).message);
     }
-    lastVpnStatusByService.set(vpnServiceId, vpnStatus.vpn_status);
+    state.lastVpnStatusByService.set(vpnServiceId, vpnStatus.vpn_status);
   }
 }
 
@@ -231,13 +255,13 @@ async function pollGluetunServices(force = false): Promise<void> {
   const now = Date.now();
   for (const service of getServices().filter((s) => s.type === 'gluetun' && s.enabled)) {
     const intervalMs = Math.max(1, service.pollIntervalMinutes) * MS_PER_MINUTE;
-    const lastPolledAt = lastGluetunPollAt.get(service.id) ?? 0;
+    const lastPolledAt = state.lastGluetunPollAt.get(service.id) ?? 0;
     if (!force && now - lastPolledAt < intervalMs) continue;
     try {
       const status = await fetchAndPersistGluetunStatus(service);
-      lastGluetunPollAt.set(service.id, now);
+      state.lastGluetunPollAt.set(service.id, now);
       if (status) {
-        lastVpnStatusByService.set(service.id, status.vpn_status);
+        state.lastVpnStatusByService.set(service.id, status.vpn_status);
       }
     } catch (err) {
       logError(`[speedarr] Gluetun check failed for ${service.name}:`, (err as Error).message);
@@ -246,8 +270,28 @@ async function pollGluetunServices(force = false): Promise<void> {
 }
 
 async function refreshConnectionSpeedBaselines(measuredDownloadMbps: number): Promise<void> {
+  const { agentId: localAgentId } = getAgentIdentity();
+  const connections = getConnections();
   const services = getServices().filter((s) => s.enabled && s.type !== 'gluetun');
   const throughputByConnectionKbs = new Map<string, number>();
+  const latestDownloadByNodeId = new Map<string, number | null>();
+
+  const getAssignedNodeIds = (connectionId: string): string[] => {
+    const conn = connections.find((connection) => connection.id === connectionId);
+    const ids = conn?.nodeIds ?? [];
+    const cleaned = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+    return cleaned.length > 0 ? cleaned : [localAgentId];
+  };
+
+  const getLatestDownloadForNode = (nodeId: string): number | null => {
+    if (latestDownloadByNodeId.has(nodeId)) {
+      return latestDownloadByNodeId.get(nodeId) ?? null;
+    }
+    const latest = getLatestResult(nodeId);
+    const speed = latest?.download_mbps ?? null;
+    latestDownloadByNodeId.set(nodeId, speed);
+    return speed;
+  };
 
   for (const service of services) {
     let currentKbs = 0;
@@ -262,15 +306,31 @@ async function refreshConnectionSpeedBaselines(measuredDownloadMbps: number): Pr
     );
   }
 
-  connectionSpeedBaselineById.clear();
-  for (const [connectionId, throughputKbs] of throughputByConnectionKbs.entries()) {
-    connectionSpeedBaselineById.set(connectionId, measuredDownloadMbps + throughputKbs / 125);
+  state.connectionSpeedBaselineById.clear();
+  for (const connection of connections) {
+    const nodeSpeeds = getAssignedNodeIds(connection.id)
+      .map((nodeId) => {
+        const latest = getLatestDownloadForNode(nodeId);
+        if (latest !== null) return latest;
+        if (nodeId === localAgentId) return measuredDownloadMbps;
+        return null;
+      })
+      .filter((speed): speed is number => typeof speed === 'number' && Number.isFinite(speed));
+    const averageMeasuredMbps = nodeSpeeds.length > 0
+      ? nodeSpeeds.reduce((sum, speed) => sum + speed, 0) / nodeSpeeds.length
+      : null;
+    const throughputKbs = throughputByConnectionKbs.get(connection.id) ?? 0;
+    const throughputMbps = throughputKbs / 125;
+    state.connectionSpeedBaselineById.set(
+      connection.id,
+      averageMeasuredMbps !== null ? averageMeasuredMbps + throughputMbps : null
+    );
   }
 }
 
 async function runSpeedCycle(retentionDays: number): Promise<void> {
-  if (speedCycleRunning) return;
-  speedCycleRunning = true;
+  if (state.speedCycleRunning) return;
+  state.speedCycleRunning = true;
   try {
     const result = await runAndPersistSpeedtest();
     await pollGluetunServices();
@@ -292,18 +352,18 @@ async function runSpeedCycle(retentionDays: number): Promise<void> {
   } catch (err) {
     logError('[speedarr] Speed test failed:', (err as Error).message);
   } finally {
-    speedCycleRunning = false;
+    state.speedCycleRunning = false;
   }
 }
 
-export function startCron(): void {
-  if (started) return;
-  started = true;
+export function startCron(options: { runImmediately?: boolean } = {}): void {
+  if (state.started) return;
+  state.started = true;
 
   const speedTestMinutes = getSpeedTestIntervalMinutes();
   const config = getEffectiveConfig();
 
-  speedTestTimer = setInterval(() => {
+  state.speedTestTimer = setInterval(() => {
     runSpeedCycle(config.retentionDays).catch((err) => {
       logError('[speedarr] Speed cycle failed:', (err as Error).message);
     });
@@ -311,7 +371,7 @@ export function startCron(): void {
 
   logger('[speedarr] Schedule started: speed test every', speedTestMinutes, 'min');
 
-  gluetunTimer = setInterval(async () => {
+  state.gluetunTimer = setInterval(async () => {
     try {
       await pollGluetunServices();
       await runVpnProtectionCheck();
@@ -322,7 +382,7 @@ export function startCron(): void {
   logger('[speedarr] Gluetun services polling enabled');
 
   // Schedule check every minute
-  scheduleTimer = setInterval(async () => {
+  state.scheduleTimer = setInterval(async () => {
     try {
       await runScheduleCheck();
     } catch (err) {
@@ -333,23 +393,25 @@ export function startCron(): void {
   runScheduleCheck().catch((err) => {
     logError('[speedarr] Initial schedule apply failed:', (err as Error).message);
   });
-  runSpeedCycle(config.retentionDays)
-    .catch((err) => {
-      logError('[speedarr] Initial speed cycle failed:', (err as Error).message);
-    });
+  if (options.runImmediately !== false) {
+    runSpeedCycle(config.retentionDays)
+      .catch((err) => {
+        logError('[speedarr] Initial speed cycle failed:', (err as Error).message);
+      });
+  }
 }
 
 export function restartCron(): void {
-  if (!started) return;
-  if (speedTestTimer) { clearInterval(speedTestTimer); speedTestTimer = null; }
-  if (gluetunTimer) { clearInterval(gluetunTimer); gluetunTimer = null; }
-  if (scheduleTimer) { clearInterval(scheduleTimer); scheduleTimer = null; }
-  vpnPausedServices.clear();
-  serviceLimitState.clear();
-  connectionSpeedBaselineById.clear();
-  lastVpnStatusByService.clear();
-  lastGluetunPollAt.clear();
-  speedCycleRunning = false;
-  started = false;
-  startCron();
+  if (!state.started) return;
+  if (state.speedTestTimer) { clearInterval(state.speedTestTimer); state.speedTestTimer = null; }
+  if (state.gluetunTimer) { clearInterval(state.gluetunTimer); state.gluetunTimer = null; }
+  if (state.scheduleTimer) { clearInterval(state.scheduleTimer); state.scheduleTimer = null; }
+  state.vpnPausedServices.clear();
+  state.serviceLimitState.clear();
+  state.connectionSpeedBaselineById.clear();
+  state.lastVpnStatusByService.clear();
+  state.lastGluetunPollAt.clear();
+  state.speedCycleRunning = false;
+  state.started = false;
+  startCron({ runImmediately: false });
 }

@@ -70,9 +70,18 @@ export const POST: APIRoute = async ({ request }) => {
       headers: { 'X-API-Key': api_key },
     });
     const existing = getRes.ok ? ((await getRes.json()) as { reportEndpoints?: { url: string; nodeId: string }[] })?.reportEndpoints ?? [] : [];
-    const seen = new Set(existing.map((e) => `${e.url}|${e.nodeId}`));
-    if (!seen.has(`${dashboardOrigin}|${id}`)) {
-      const reportEndpoints = [...existing, { url: dashboardOrigin, nodeId: id }];
+    const byUrl = new Map<string, string>();
+    for (const endpoint of existing) {
+      if (!endpoint || typeof endpoint.url !== 'string' || typeof endpoint.nodeId !== 'string') continue;
+      const url = endpoint.url.trim().replace(/\/$/, '');
+      const nodeId = endpoint.nodeId.trim();
+      if (!url || !nodeId) continue;
+      byUrl.set(url, nodeId);
+    }
+    const currentNodeId = byUrl.get(dashboardOrigin) ?? null;
+    if (currentNodeId !== id) {
+      byUrl.set(dashboardOrigin, id);
+      const reportEndpoints = [...byUrl.entries()].map(([url, nodeId]) => ({ url, nodeId }));
       await fetch(`${nodeBaseUrl}/api/config`, {
         method: 'PATCH',
         headers: { 'X-API-Key': api_key, 'Content-Type': 'application/json' },

@@ -57,7 +57,14 @@ export function getReportEndpoints(): ReportEndpoint[] {
             if (url && nodeId) out.push({ url, nodeId });
           }
         }
-        if (out.length > 0) return out;
+        if (out.length > 0) {
+          // One endpoint per dashboard URL. If duplicates exist, keep the latest nodeId entry.
+          const byUrl = new Map<string, ReportEndpoint>();
+          for (const endpoint of out) {
+            byUrl.set(endpoint.url, endpoint);
+          }
+          return [...byUrl.values()];
+        }
       }
     } catch {
       /* ignore */

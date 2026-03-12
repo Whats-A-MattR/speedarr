@@ -37,7 +37,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
   const status = await fetchGluetunStatusWithConfig(address, apiKey);
   if (!status) {
-    return jsonResponse({ ok: false, error: 'Connection failed or Gluetun returned no data' }, 200);
+    return jsonResponse({ ok: false, error: 'Service check failed or Gluetun returned no data' }, 200);
   }
   return jsonResponse({
     ok: true,

@@ -95,6 +95,7 @@ export interface ServiceConfig {
 export interface ConnectionConfig {
   id: string;
   name: string;
+  nodeIds: string[];
 }
 
 function parseServices(raw: string | undefined): ServiceConfig[] {
@@ -144,7 +145,10 @@ function parseConnections(raw: string | undefined): ConnectionConfig[] {
       if (typeof conn.id !== 'string' || !conn.id.trim()) continue;
       const id = conn.id.trim();
       const name = typeof conn.name === 'string' && conn.name.trim() ? conn.name.trim() : id;
-      out.push({ id, name });
+      const nodeIds = Array.isArray(conn.nodeIds)
+        ? [...new Set(conn.nodeIds.filter((nodeId): nodeId is string => typeof nodeId === 'string').map((nodeId) => nodeId.trim()).filter(Boolean))]
+        : [];
+      out.push({ id, name, nodeIds });
     }
     return out;
   } catch {
@@ -197,13 +201,13 @@ export function getConnections(): ConnectionConfig[] {
     byId.set(conn.id, conn);
   }
   if (!byId.has('default')) {
-    byId.set('default', { id: 'default', name: 'Default' });
+    byId.set('default', { id: 'default', name: 'Default', nodeIds: [] });
   }
 
   for (const service of parseServices(data['SERVICES'])) {
     const id = service.connectionId && service.connectionId.trim() ? service.connectionId.trim() : 'default';
     if (!byId.has(id)) {
-      byId.set(id, { id, name: id });
+      byId.set(id, { id, name: id, nodeIds: [] });
     }
   }
 
@@ -216,16 +220,21 @@ export function getConnections(): ConnectionConfig[] {
   return out;
 }
 
-export function upsertConnection(connection: ConnectionConfig): void {
+export function upsertConnection(connection: { id: string; name: string; nodeIds?: string[] }): void {
   const data = readConfig();
   const connections = parseConnections(data['CONNECTIONS']);
   const id = connection.id.trim();
   const name = connection.name.trim() || id;
+  const hasNodeIds = Array.isArray(connection.nodeIds);
+  const nodeIds = hasNodeIds
+    ? [...new Set(connection.nodeIds.map((nodeId) => String(nodeId).trim()).filter(Boolean))]
+    : [];
   const idx = connections.findIndex((c) => c.id === id);
   if (idx >= 0) {
-    connections[idx] = { id, name };
+    const existing = connections[idx];
+    connections[idx] = { id, name, nodeIds: hasNodeIds ? nodeIds : existing.nodeIds };
   } else {
-    connections.push({ id, name });
+    connections.push({ id, name, nodeIds });
   }
   data['CONNECTIONS'] = JSON.stringify(connections);
   writeConfig(data);

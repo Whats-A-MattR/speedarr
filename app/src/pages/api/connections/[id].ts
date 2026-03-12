@@ -31,24 +31,27 @@ export const PATCH: APIRoute = async ({ request, params }) => {
   const existing = getConnections().find((connection) => connection.id === id);
   if (!existing) return jsonResponse({ error: 'Not found' }, 404);
 
-  let body: { name?: string };
+  let body: { name?: string; nodeIds?: string[] };
   try {
     body = await request.json();
   } catch {
     return jsonResponse({ error: 'Invalid JSON' }, 400);
   }
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!name) return jsonResponse({ error: 'Connection name is required' }, 400);
+  const name = typeof body.name === 'string' ? body.name.trim() : existing.name;
+  if (!name) return jsonResponse({ error: 'Network group name is required' }, 400);
+  const nodeIds = Array.isArray(body.nodeIds)
+    ? [...new Set(body.nodeIds.filter((nodeId): nodeId is string => typeof nodeId === 'string').map((nodeId) => nodeId.trim()).filter(Boolean))]
+    : existing.nodeIds;
 
-  upsertConnection({ id, name });
+  upsertConnection({ id, name, nodeIds });
   return jsonResponse({ ok: true });
 };
 
 export const DELETE: APIRoute = async ({ request, params }) => {
   if (!hasSession(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
   const id = (params.id ?? '').trim();
-  if (!id) return jsonResponse({ error: 'Missing connection id' }, 400);
-  if (id === 'default') return jsonResponse({ error: 'Default connection cannot be deleted' }, 400);
+  if (!id) return jsonResponse({ error: 'Missing network group id' }, 400);
+  if (id === 'default') return jsonResponse({ error: 'Default network group cannot be deleted' }, 400);
   const existing = getConnections().find((connection) => connection.id === id);
   if (!existing) return jsonResponse({ error: 'Not found' }, 404);
 

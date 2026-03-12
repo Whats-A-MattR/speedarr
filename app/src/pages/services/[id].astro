@@ -48,6 +48,9 @@ const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== s
       button.btn:hover { background: #2563eb; }
       button.btn-sm { background: #334155; color: #e2e8f0; border: none; padding: 0.25rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
       button.btn-sm:hover { background: #475569; }
+      button.btn-danger { background: transparent; color: #fca5a5; border: 1px solid #7f1d1d; padding: 0.35rem 0.7rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+      button.btn-danger:hover { background: #7f1d1d; color: #fff; }
+      button.btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
       .msg { padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
       .msg.err { background: #7f1d1d; color: #fca5a5; }
       .msg.ok { background: #14532d; color: #86efac; }
@@ -58,6 +61,10 @@ const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== s
       .schedule-table input[type="time"], .schedule-table input[type="number"] { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.3rem 0.4rem; border-radius: 4px; width: 100%; }
       .test-result { font-size: 0.85rem; margin-top: 0.4rem; color: #94a3b8; }
       .inline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+      .danger-zone { border: 1px solid #7f1d1d; background: #2a1120; }
+      .danger-zone h3 { color: #fca5a5; }
+      .danger-zone .form-section-desc { color: #fecaca; }
+      .danger-zone code { background: #450a0a; color: #fecaca; padding: 0.05rem 0.3rem; border-radius: 4px; }
       @media (max-width: 700px) { .inline-grid { grid-template-columns: 1fr; } }
     </style>
   </head>
@@ -65,7 +72,7 @@ const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== s
     <header>
       <h1>Speedarr</h1>
       <nav>
-        <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/nodes">Nodes</a> · <a href="/services">Services</a> · <a href="/settings">Settings</a>
+        <a href="/">Dashboard</a> · <a href="/history">History</a> · <a href="/services">Services</a> · <a href="/settings">Settings</a>
         <form method="post" action="/api/auth/logout" style="display:inline; margin-left: 1rem;">
           <button type="submit">Sign out</button>
         </form>
@@ -80,14 +87,14 @@ const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== s
       <div id="msg" class="msg hidden" role="status"></div>
 
       <form id="conn-form" class="form-section">
-        <h3>Connection</h3>
+        <h3>Network Group</h3>
         <div class="inline-grid">
           <div class="form-row">
             <label for="svc-name">Name</label>
             <input type="text" id="svc-name" value={service.name} />
           </div>
           <div class="form-row">
-            <label for="svc-connection">Connection ID</label>
+            <label for="svc-connection">Network group</label>
             <select id="svc-connection">
               {connections.map((connection) => (
                 <option value={connection.id} selected={connection.id === (service.connectionId || 'default')}>
@@ -158,7 +165,7 @@ const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== s
 
         <div style="display:flex; gap:0.5rem; align-items:center;">
           <button type="submit" class="btn">Save</button>
-          <button type="button" id="test-btn" class="btn-sm">Test connection</button>
+          <button type="button" id="test-btn" class="btn-sm">Test service</button>
         </div>
         <p id="test-result" class="test-result"></p>
       </form>
@@ -188,8 +195,25 @@ const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== s
           <button type="submit" class="btn">Save schedule</button>
         </form>
       )}
+      <section class="form-section danger-zone">
+        <h3>Danger Zone</h3>
+        <p class="form-section-desc">Delete this service permanently. This action cannot be undone.</p>
+        <div class="form-row">
+          <label for="delete-confirm-name">
+            Type <code>{service.name}</code> to confirm deletion
+          </label>
+          <input
+            type="text"
+            id="delete-confirm-name"
+            autocomplete="off"
+            placeholder={service.name}
+          />
+          <p class="hint">The name must match exactly.</p>
+        </div>
+        <button type="button" id="delete-service-btn" class="btn-danger" disabled>Delete service</button>
+      </section>
     </main>
-    <script define:vars={{ serviceId: service.id, serviceType: service.type, initialRules: service.schedule }}>
+    <script define:vars={{ serviceId: service.id, serviceName: service.name, serviceType: service.type, initialRules: service.schedule }}>
       const msgEl = document.getElementById('msg');
       function showMsg(text, isErr) {
         msgEl.classList.remove('hidden');
@@ -234,7 +258,7 @@ const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== s
             showMsg(data.error || 'Failed to save', true);
             return;
           }
-          showMsg('Connection saved.', false);
+          showMsg('Network group saved.', false);
           if (body.apiKey !== undefined) {
             apiKeyInput.dataset.hasKey = body.apiKey ? 'true' : 'false';
             apiKeyInput.value = body.apiKey ? '••••••••' : '';
@@ -268,6 +292,39 @@ const vpnServices = allServices.filter((s) => s.type === 'gluetun' && s.id !== s
           }
         } catch (err) {
           resultEl.textContent = 'Error: ' + err.message;
+        }
+      });
+
+      const deleteConfirmInput = document.getElementById('delete-confirm-name');
+      const deleteServiceBtn = document.getElementById('delete-service-btn');
+
+      function deleteConfirmMatches() {
+        return (deleteConfirmInput?.value || '').trim() === serviceName;
+      }
+
+      deleteConfirmInput?.addEventListener('input', () => {
+        if (!deleteServiceBtn) return;
+        deleteServiceBtn.disabled = !deleteConfirmMatches();
+      });
+
+      deleteServiceBtn?.addEventListener('click', async () => {
+        if (!deleteConfirmMatches()) {
+          showMsg('Type the exact service name to confirm deletion.', true);
+          return;
+        }
+        deleteServiceBtn.disabled = true;
+        try {
+          const r = await fetch('/api/services/' + serviceId, { method: 'DELETE' });
+          if (!r.ok) {
+            const data = await r.json();
+            showMsg(data.error || 'Failed to delete service', true);
+            deleteServiceBtn.disabled = false;
+            return;
+          }
+          window.location.href = '/services';
+        } catch (err) {
+          showMsg(err.message || 'Request failed', true);
+          deleteServiceBtn.disabled = false;
         }
       });
 
