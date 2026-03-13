@@ -3,10 +3,7 @@ export const prerender = false;
 import { getConnections, getServices } from '../lib/config-file.js';
 import { getAgentIdentity } from '../lib/config.js';
 import { getLatestResult, getNodes } from '../lib/db.js';
-import { startCron } from '../lib/cron.js';
 import { getSabnzbdCurrentSpeedKbs } from '../lib/sabnzbd.js';
-
-startCron();
 const services = getServices();
 const connections = getConnections();
 const { agentId: localAgentId, agentName: localAgentName } = getAgentIdentity();

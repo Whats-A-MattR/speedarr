@@ -122,7 +122,7 @@ export async function runAndPersistSpeedtest(): Promise<SpeedtestResult> {
     const apiKey = getSetting('SPEEDARR_API_KEY');
     if (apiKey && endpoints.length > 0) {
       for (const ep of endpoints) {
-        reportResultToDashboard(ep.url, ep.nodeId, apiKey, result).catch((err) => {
+        reportResultToDashboard(ep.url, ep.nodeId, apiKey, result, agentName).catch((err) => {
           logger('[speedarr] Failed to report result to', ep.url, ':', (err as Error).message);
         });
       }
@@ -136,13 +136,15 @@ async function reportResultToDashboard(
   dashboardUrl: string,
   nodeId: string,
   apiKey: string,
-  result: SpeedtestResult
+  result: SpeedtestResult,
+  agentName: string
 ): Promise<void> {
   const res = await fetch(`${dashboardUrl}/api/nodes/report`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
     body: JSON.stringify({
       nodeId,
+      agent_name: agentName,
       timestamp: result.timestamp,
       download_mbps: result.download_mbps,
       upload_mbps: result.upload_mbps,

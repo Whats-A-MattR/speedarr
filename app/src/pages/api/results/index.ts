@@ -1,6 +1,5 @@
 import type { APIRoute } from 'astro';
 import { requireApiKey, validateSession } from '../../../lib/auth.js';
-import { startCron } from '../../../lib/cron.js';
 import { getResults } from '../../../lib/db.js';
 
 export const prerender = false;
@@ -14,7 +13,6 @@ function hasSession(request: Request): boolean {
 }
 
 export const GET: APIRoute = async ({ request, url }) => {
-  startCron();
   if (!requireApiKey(request) && !hasSession(request)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,

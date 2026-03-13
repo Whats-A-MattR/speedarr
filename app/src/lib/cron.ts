@@ -32,23 +32,34 @@ type CronState = {
 
 const CRON_STATE_KEY = '__speedarrCronStateV1__';
 
+function createCronState(): CronState {
+  return {
+    started: false,
+    speedTestTimer: null,
+    gluetunTimer: null,
+    scheduleTimer: null,
+    speedCycleRunning: false,
+    vpnPausedServices: new Set<string>(),
+    serviceLimitState: new Map<string, string>(),
+    connectionSpeedBaselineById: new Map<string, number | null>(),
+    lastVpnStatusByService: new Map<string, string | null>(),
+    lastGluetunPollAt: new Map<string, number>(),
+  };
+}
+
 function getCronState(): CronState {
   const g = globalThis as typeof globalThis & { [CRON_STATE_KEY]?: CronState };
-  if (!g[CRON_STATE_KEY]) {
-    g[CRON_STATE_KEY] = {
-      started: false,
-      speedTestTimer: null,
-      gluetunTimer: null,
-      scheduleTimer: null,
-      speedCycleRunning: false,
-      vpnPausedServices: new Set<string>(),
-      serviceLimitState: new Map<string, string>(),
-      connectionSpeedBaselineById: new Map<string, number | null>(),
-      lastVpnStatusByService: new Map<string, string | null>(),
-      lastGluetunPollAt: new Map<string, number>(),
-    };
+  const p = process as NodeJS.Process & { [CRON_STATE_KEY]?: CronState };
+  const existing = p[CRON_STATE_KEY] ?? g[CRON_STATE_KEY];
+  if (existing) {
+    p[CRON_STATE_KEY] = existing;
+    g[CRON_STATE_KEY] = existing;
+    return existing;
   }
-  return g[CRON_STATE_KEY]!;
+  const created = createCronState();
+  p[CRON_STATE_KEY] = created;
+  g[CRON_STATE_KEY] = created;
+  return created;
 }
 
 const state = getCronState();
@@ -328,8 +339,21 @@ async function refreshConnectionSpeedBaselines(measuredDownloadMbps: number): Pr
   }
 }
 
-async function runSpeedCycle(retentionDays: number): Promise<void> {
+function hasRecentScheduledResult(): boolean {
+  const speedTestMinutes = getSpeedTestIntervalMinutes();
+  const { agentId } = getAgentIdentity();
+  const latest = getLatestResult(agentId);
+  if (!latest) return false;
+  const elapsedMs = Date.now() - latest.timestamp;
+  return elapsedMs >= 0 && elapsedMs < speedTestMinutes * MS_PER_MINUTE;
+}
+
+async function runSpeedCycle(
+  retentionDays: number,
+  options: { enforceInterval?: boolean } = {}
+): Promise<void> {
   if (state.speedCycleRunning) return;
+  if (options.enforceInterval && hasRecentScheduledResult()) return;
   state.speedCycleRunning = true;
   try {
     const result = await runAndPersistSpeedtest();
@@ -364,7 +388,7 @@ export function startCron(options: { runImmediately?: boolean } = {}): void {
   const config = getEffectiveConfig();
 
   state.speedTestTimer = setInterval(() => {
-    runSpeedCycle(config.retentionDays).catch((err) => {
+    runSpeedCycle(config.retentionDays, { enforceInterval: true }).catch((err) => {
       logError('[speedarr] Speed cycle failed:', (err as Error).message);
     });
   }, speedTestMinutes * MS_PER_MINUTE);
@@ -394,7 +418,7 @@ export function startCron(options: { runImmediately?: boolean } = {}): void {
     logError('[speedarr] Initial schedule apply failed:', (err as Error).message);
   });
   if (options.runImmediately !== false) {
-    runSpeedCycle(config.retentionDays)
+    runSpeedCycle(config.retentionDays, { enforceInterval: true })
       .catch((err) => {
         logError('[speedarr] Initial speed cycle failed:', (err as Error).message);
       });

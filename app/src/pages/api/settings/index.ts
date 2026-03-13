@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { validateSession } from '../../../lib/auth.js';
 import { getEffectiveConfig, getGluetunPollingConfig } from '../../../lib/config.js';
 import { getSetting, setSetting } from '../../../lib/config-file.js';
+import { restartCron } from '../../../lib/cron.js';
 
 export const prerender = false;
 
@@ -69,9 +70,17 @@ export const PATCH: APIRoute = async ({ request }) => {
   } catch {
     return jsonResponse({ error: 'Invalid JSON' }, 400);
   }
+  let shouldRestartCron = false;
   for (const key of SETTING_KEYS) {
     const v = body[key];
     if (v === undefined) continue;
+    if (
+      key === 'SPEEDARR_INTERVAL_MINUTES' ||
+      key === 'SPEEDARR_RETENTION_DAYS' ||
+      key === 'SPEEDARR_GLUETUN_INTERVAL_MINUTES'
+    ) {
+      shouldRestartCron = true;
+    }
     if (v === null || v === '') {
       setSetting(key, '');
       continue;
@@ -91,6 +100,9 @@ export const PATCH: APIRoute = async ({ request }) => {
       if (!Number.isFinite(n) || n < 0) continue;
       setSetting(key, String(n));
     }
+  }
+  if (shouldRestartCron) {
+    restartCron();
   }
   return jsonResponse({ ok: true });
 };

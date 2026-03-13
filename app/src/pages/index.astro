@@ -2,9 +2,6 @@
 export const prerender = false;
 import { getResults, getLatestResult, getAgents, getLatestGluetunStatus } from '../lib/db.js';
 import { getServices } from '../lib/config-file.js';
-import { startCron } from '../lib/cron.js';
-
-startCron();
 const agentIdParam = Astro.url.searchParams.get('agent_id') ?? undefined;
 const agents = getAgents();
 const latest = getLatestResult(agentIdParam ?? undefined);

@@ -1,5 +1,4 @@
 import type { APIRoute } from 'astro';
-import { startCron } from '../../lib/cron.js';
 import { getDb } from '../../lib/db.js';
 import { env } from '../../lib/env.js';
 import { ensureNodeConfigWithApiKey } from '../../lib/config-file.js';
@@ -10,7 +9,6 @@ export const GET: APIRoute = async () => {
   if (env.MODE === 'node') {
     ensureNodeConfigWithApiKey();
   }
-  startCron();
   try {
     getDb();
   } catch (e) {

@@ -171,6 +171,15 @@ export function getNodeById(id: string): NodeRow | null {
   return (row as NodeRow | undefined) ?? null;
 }
 
+export function getNodeByApiKey(apiKey: string): NodeRow | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, name, base_url, api_key, blocked, created_at, updated_at, last_seen_at, last_external_ip FROM nodes WHERE api_key = ? ORDER BY updated_at DESC LIMIT 1`
+    )
+    .get(apiKey);
+  return (row as NodeRow | undefined) ?? null;
+}
+
 export function createNode(row: {
   id: string;
   name: string;
